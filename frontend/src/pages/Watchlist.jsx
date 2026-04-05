@@ -81,6 +81,7 @@ export default function Watchlist() {
         </div>
       ) : (
         <div className="space-y-2 animate-slide-up">
+          <p className={`text-xs ${sub} text-right pr-1 pb-0.5 opacity-60`}>← Links wischen zum Entfernen</p>
           {items.map(item => {
             const q = quotes[item.symbol]
             return (
