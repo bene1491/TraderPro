@@ -270,6 +270,9 @@ export default function Asset() {
       return tick.price
     })
     setTickTime(new Date())
+    if (tick.marketState) {
+      setQuote(q => q ? { ...q, marketState: tick.marketState } : q)
+    }
   }, [tick])
 
   useEffect(() => {

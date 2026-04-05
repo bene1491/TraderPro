@@ -41,10 +41,11 @@ async def _stream_crypto(websocket: WebSocket, symbol: str, binance_sym: str):
                 price_eur = round(price_raw * rate, 4) if rate else price_raw
 
             await websocket.send_json({
-                "price": price_eur,
-                "currency": "EUR",
-                "source": "live",
-                "ts": datetime.datetime.utcnow().isoformat(),
+                "price":       price_eur,
+                "currency":    "EUR",
+                "marketState": "REGULAR",
+                "source":      "live",
+                "ts":          datetime.datetime.utcnow().isoformat(),
             })
 
             # Send a WS ping to the client every 20s to keep Render proxy alive
