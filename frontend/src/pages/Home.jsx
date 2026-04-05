@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Sun, Moon, BarChart2, Globe, Bitcoin, Layers, TrendingUp, ArrowLeftRight, ChevronRight, X } from 'lucide-react'
 import SearchBar from '../components/SearchBar'
@@ -300,7 +301,7 @@ function CategorySheet({ category, onClose }) {
   const divider = dark ? 'bg-tp-border'  : 'bg-tp-border-l'
   const Icon    = category.icon
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col">
       {/* Backdrop */}
       <div
@@ -365,7 +366,8 @@ function CategorySheet({ category, onClose }) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
