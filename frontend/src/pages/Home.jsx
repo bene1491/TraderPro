@@ -304,7 +304,7 @@ function CategorySheet({ category, onClose }) {
     <div className="fixed inset-0 z-50 flex flex-col">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
+        className="absolute inset-0 bg-black/40 backdrop-blur-md transition-opacity duration-300"
         style={{ opacity: backdropVisible ? 1 : 0 }}
         onClick={animateClose}
       />
@@ -312,7 +312,7 @@ function CategorySheet({ category, onClose }) {
       {/* Sheet — transform managed via sheetRef, no CSS transition class */}
       <div
         ref={sheetRef}
-        className={`relative mt-auto rounded-t-3xl ${bg} flex flex-col max-h-[85vh]`}
+        className={`relative mt-auto rounded-t-3xl ${bg} flex flex-col max-h-[72vh]`}
       >
         {/* Drag handle + header — tap/drag anywhere here to close */}
         <div ref={handleRef} className="shrink-0 cursor-grab active:cursor-grabbing select-none">
