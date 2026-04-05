@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const API_BASE    = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 const BINANCE_WS  = 'wss://stream.binance.com:9443/ws'
 const BINANCE_API = 'https://api.binance.com/api/v3/ticker/price'
 
@@ -27,56 +27,54 @@ export function useTickerWS(symbol) {
       let dead = false
       let ws   = null
       let reconnectTimer = null
+      let rateTimer      = null
 
-      // Fetch EUR/USDT rate once from Binance REST, then refresh every 60s
       const refreshEurRate = () => {
-        fetch(`${BINANCE_API}?symbol=EURUSDT`)
-          .then(r => r.json())
-          .then(d => { if (d.price) eurRateRef.current = 1 / parseFloat(d.price) })
-          .catch(() => {})
+        fetch(BINANCE_API + '?symbol=EURUSDT')
+          .then(function(r) { return r.json() })
+          .then(function(d) { if (d.price) eurRateRef.current = 1 / parseFloat(d.price) })
+          .catch(function() {})
       }
+
       if (isUsdPair) {
         refreshEurRate()
-        const rateTimer = setInterval(refreshEurRate, 60_000)
-        // clean up via closure below
-        const origCleanup = () => clearInterval(rateTimer)
-        // attach to dead-flag cleanup
-        void origCleanup  // referenced in return
+        rateTimer = setInterval(refreshEurRate, 60000)
       }
 
-      const connect = () => {
+      function connect() {
         if (dead) return
-        ws = new WebSocket(`${BINANCE_WS}/${binanceSym}@miniTicker`)
+        ws = new WebSocket(BINANCE_WS + '/' + binanceSym + '@miniTicker')
 
-        ws.onopen  = () => setConnected(true)
-        ws.onclose = () => {
+        ws.onopen = function() { setConnected(true) }
+        ws.onclose = function() {
           setConnected(false)
           if (!dead) reconnectTimer = setTimeout(connect, 3000)
         }
-        ws.onerror = () => ws.close()
-        ws.onmessage = (e) => {
+        ws.onerror = function() { ws.close() }
+        ws.onmessage = function(e) {
           try {
-            const d = JSON.parse(e.data)
-            let price = parseFloat(d.c)
+            var d = JSON.parse(e.data)
+            var price = parseFloat(d.c)
             if (isUsdPair && eurRateRef.current) {
               price = Math.round(price * eurRateRef.current * 100) / 100
             }
             setTick({
-              price,
+              price:       price,
               currency:    'EUR',
               marketState: 'REGULAR',
               source:      'live',
               ts:          new Date().toISOString(),
             })
-          } catch {}
+          } catch (err) {}
         }
       }
 
       connect()
-      return () => {
+      return function() {
         dead = true
         clearTimeout(reconnectTimer)
-        ws?.close()
+        clearInterval(rateTimer)
+        if (ws) ws.close()
       }
     }
 
@@ -84,11 +82,11 @@ export function useTickerWS(symbol) {
     let dead  = false
     let timer = null
 
-    const poll = () => {
+    function poll() {
       if (dead) return
-      fetch(`${API_BASE}/api/quote/${symbol}`)
-        .then(r => r.json())
-        .then(d => {
+      fetch(API_BASE + '/api/quote/' + symbol)
+        .then(function(r) { return r.json() })
+        .then(function(d) {
           if (d.price != null) {
             setConnected(true)
             setTick({
@@ -102,12 +100,12 @@ export function useTickerWS(symbol) {
             })
           }
         })
-        .catch(() => setConnected(false))
-        .finally(() => { if (!dead) timer = setTimeout(poll, 5000) })
+        .catch(function() { setConnected(false) })
+        .finally(function() { if (!dead) timer = setTimeout(poll, 5000) })
     }
 
-    timer = setTimeout(poll, 5000)   // first tick after 5s (initial load already loaded the quote)
-    return () => { dead = true; clearTimeout(timer) }
+    timer = setTimeout(poll, 5000)
+    return function() { dead = true; clearTimeout(timer) }
   }, [symbol])
 
   return { tick, connected }
