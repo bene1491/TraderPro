@@ -397,9 +397,6 @@ export default function Home() {
         </button>
       </div>
 
-      {/* TODO: remove – deploy test */}
-      <div className="text-xs text-center text-tp-sub opacity-50">v0.1 – auto-deploy test</div>
-
       {/* Search */}
       <SearchBar />
 
