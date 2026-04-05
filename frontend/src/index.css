@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
+  }
+
+  html {
+    @apply bg-tp-bg text-tp-text;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html.light {
+    @apply bg-tp-bg-l text-tp-text-l;
+  }
+
+  body {
+    @apply min-h-screen;
+    padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior-y: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+@layer utilities {
+  .safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .safe-top {
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+
+  /* Price colors */
+  .price-up   { @apply text-tp-green; }
+  .price-down { @apply text-tp-red; }
+
+  /*
+    hov-dark / hov-light:
+    - Touch devices (pointer: coarse): only active: fires → highlight only while finger is down
+    - Mouse devices (pointer: fine):   hover: fires as normal
+    This prevents the "stuck hover" bug on iOS/Android.
+  */
+  .hov-dark  { @apply active:bg-tp-border; }
+  .hov-light { @apply active:bg-tp-border-l; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hov-dark:hover  { background-color: theme('colors.tp.border'); }
+  .hov-light:hover { background-color: theme('colors.tp.border-l'); }
+}
+
+/* ── Range slider ─────────────────────────────────────── */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+  background: transparent;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.35);
+  cursor: pointer;
+  border: none;
+  margin-top: -9px;
+}
+input[type='range']::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.35);
+  cursor: pointer;
+  border: none;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+}
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+}
