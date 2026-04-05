@@ -32,9 +32,16 @@ export default function Auth() {
         if (err) throw err
         navigate('/watchlist')
       } else {
-        const { error: err } = await signUp(email, password)
+        const { data, error: err } = await signUp(email, password)
         if (err) throw err
-        setSuccess('Bestätigungs-E-Mail wurde gesendet. Bitte überprüfe dein Postfach.')
+        if (data?.session) {
+          // email confirmation disabled → direkt einloggen
+          navigate('/watchlist')
+        } else {
+          // email confirmation enabled → auf Bestätigungsmail warten
+          // setSuccess('Bestätigungs-E-Mail wurde gesendet. Bitte überprüfe dein Postfach.')
+          navigate('/watchlist')
+        }
       }
     } catch (err) {
       setError(err.message ?? 'Ein Fehler ist aufgetreten.')
