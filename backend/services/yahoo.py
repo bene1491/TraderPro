@@ -176,17 +176,23 @@ def get_quote(symbol: str) -> dict:
     year_high = year_high or info.get("fiftyTwoWeekHigh")
     year_low  = year_low  or info.get("fiftyTwoWeekLow")
 
-    # Market state: fast_info.market_state is reliable even when info fails
-    market_state = "CLOSED"
-    if fi:
-        try:
-            ms = fi.market_state
-            if ms:
-                market_state = ms
-        except Exception:
-            pass
-    if market_state == "CLOSED":
-        market_state = info.get("marketState", "CLOSED")
+    # Market state
+    quote_type = info.get("quoteType") or (fi.quote_type if fi else None) or ""
+
+    # Crypto is 24/7 — never closed
+    if quote_type == "CRYPTOCURRENCY" or "-USD" in symbol.upper() or "-EUR" in symbol.upper():
+        market_state = "REGULAR"
+    else:
+        market_state = "CLOSED"
+        if fi:
+            try:
+                ms = fi.market_state
+                if ms:
+                    market_state = ms
+            except Exception:
+                pass
+        if market_state == "CLOSED":
+            market_state = info.get("marketState", "CLOSED")
 
     last_trade_ts  = info.get("regularMarketTime")
     last_trade_iso = None
