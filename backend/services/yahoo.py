@@ -19,8 +19,14 @@ HEADERS = {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
-    )
+    ),
+    "Accept": "application/json,text/html,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
 }
+
+# Shared session so cookies/crumb are reused across requests
+_session = requests.Session()
+_session.headers.update(HEADERS)
 
 # Currencies we convert TO EUR (everything else stays as-is)
 CONVERT_TO_EUR = {"USD", "GBp", "GBX", "GBP", "CNY", "JPY", "CHF", "CAD", "AUD", "HKD"}
@@ -46,7 +52,7 @@ def _get_eur_rate(from_currency: str) -> float | None:
         if now - ts < _FX_TTL:
             return rate
     try:
-        fx = yf.Ticker(pair)
+        fx = yf.Ticker(pair, session=_session)
         rate = fx.fast_info.last_price
         if rate:
             _fx_cache[pair] = (rate, now)
@@ -64,7 +70,7 @@ def _to_eur(value: float | None, rate: float | None) -> float | None:
 
 def search_assets(query: str, limit: int = 12) -> list[dict]:
     try:
-        s = yf.Search(query, max_results=limit, news_count=0)
+        s = yf.Search(query, max_results=limit, news_count=0, session=_session)
         quotes = s.quotes
         if quotes:
             return _map_quotes(quotes[:limit])
@@ -114,13 +120,21 @@ def _map_quotes(quotes: list) -> list[dict]:
 
 
 def get_quote(symbol: str) -> dict:
-    ticker = yf.Ticker(symbol)
+    ticker = yf.Ticker(symbol, session=_session)
+
+    # fast_info uses the lightweight chart endpoint — more reliable on cloud IPs
+    fi = None
     try:
-        fi   = ticker.fast_info
-        info = ticker.info
+        fi = ticker.fast_info
     except Exception:
-        info = {}
-        fi   = None
+        pass
+
+    # ticker.info uses quoteSummary — may fail on rate-limited IPs; always try separately
+    info = {}
+    try:
+        info = ticker.info or {}
+    except Exception:
+        pass
 
     price = prev_close = None
     if fi:
@@ -134,7 +148,15 @@ def get_quote(symbol: str) -> dict:
     if prev_close is None:
         prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
 
-    orig_currency = info.get("currency", "USD")
+    # Currency: prefer fast_info (more reliable), fall back to info
+    orig_currency = "USD"
+    if fi:
+        try:
+            orig_currency = fi.currency or "USD"
+        except Exception:
+            pass
+    if orig_currency == "USD":
+        orig_currency = info.get("currency", "USD")
 
     # FX conversion
     rate = _get_eur_rate(orig_currency) if orig_currency in CONVERT_TO_EUR else None
@@ -158,8 +180,18 @@ def get_quote(symbol: str) -> dict:
     year_high = year_high or info.get("fiftyTwoWeekHigh")
     year_low  = year_low  or info.get("fiftyTwoWeekLow")
 
-    # Market state
-    market_state   = info.get("marketState", "CLOSED")
+    # Market state: fast_info.market_state is reliable even when info fails
+    market_state = "CLOSED"
+    if fi:
+        try:
+            ms = fi.market_state
+            if ms:
+                market_state = ms
+        except Exception:
+            pass
+    if market_state == "CLOSED":
+        market_state = info.get("marketState", "CLOSED")
+
     last_trade_ts  = info.get("regularMarketTime")
     last_trade_iso = None
     if last_trade_ts:
@@ -219,7 +251,7 @@ def get_quote(symbol: str) -> dict:
 
 def get_history(symbol: str, period: str = "1Y") -> list[dict]:
     yf_period, interval = PERIOD_MAP.get(period.upper(), ("1y", "1d"))
-    ticker = yf.Ticker(symbol)
+    ticker = yf.Ticker(symbol, session=_session)
 
     # Get currency for this ticker
     try:
