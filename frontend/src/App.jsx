@@ -1,5 +1,12 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import Layout from './components/Layout'
+
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
+  return null
+}
 import Home       from './pages/Home'
 import Asset      from './pages/Asset'
 import Watchlist  from './pages/Watchlist'
@@ -10,6 +17,7 @@ import Calculator from './pages/Calculator'
 export default function App() {
   return (
     <Layout>
+      <ScrollToTop />
       <Routes>
         <Route path="/"             element={<Home />} />
         <Route path="/asset/:symbol" element={<Asset />} />
