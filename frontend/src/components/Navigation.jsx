@@ -17,7 +17,7 @@ export default function Navigation() {
 
   return (
     <nav className={`fixed bottom-0 left-0 right-0 border-t z-40 ${base}`}
-      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) - 20px)' }}
+      style={{ paddingBottom: 'max(0px, calc(env(safe-area-inset-bottom) - 20px))' }}
     >
       <div className="flex max-w-lg mx-auto">
         {NAV.map(({ to, icon: Icon, label }) => (
