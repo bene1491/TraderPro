@@ -149,6 +149,7 @@ export default function Calculator() {
   const navigate    = useNavigate()
   const toast       = useToast()
   const { scenarios, save, remove, useCloud } = useCalculatorScenarios()
+  const lastCalcTickIndex = useRef(null)
 
   const [start,   setStart]   = useState(1000)
   const [monthly, setMonthly] = useState(100)
@@ -272,7 +273,15 @@ export default function Calculator() {
       <div className={`rounded-2xl border p-4 ${card}`}>
         <div className={`text-sm font-semibold mb-4 ${text}`}>Vermögensentwicklung</div>
         <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+          <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+            onMouseMove={(s) => {
+              if (s?.activeTooltipIndex != null && s.activeTooltipIndex !== lastCalcTickIndex.current) {
+                lastCalcTickIndex.current = s.activeTooltipIndex
+                navigator.vibrate?.(6)
+              }
+            }}
+            onMouseLeave={() => { lastCalcTickIndex.current = null }}
+          >
             <defs>
               <linearGradient id="gradInvested" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.5} />
