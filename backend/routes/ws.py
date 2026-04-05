@@ -26,7 +26,8 @@ async def _stream_crypto(websocket: WebSocket, symbol: str, binance_sym: str):
     url = f"wss://stream.binance.com:9443/ws/{binance_sym}@miniTicker"
     use_eur_pair = binance_sym.endswith("eur")
 
-    async with websockets.connect(url, ping_interval=20) as ws:
+    async with websockets.connect(url, ping_interval=20, ping_timeout=30) as ws:
+        last_ping = asyncio.get_event_loop().time()
         async for raw in ws:
             if websocket.client_state.value != 1:
                 break
@@ -45,6 +46,15 @@ async def _stream_crypto(websocket: WebSocket, symbol: str, binance_sym: str):
                 "source": "live",
                 "ts": datetime.datetime.utcnow().isoformat(),
             })
+
+            # Send a WS ping to the client every 20s to keep Render proxy alive
+            now = asyncio.get_event_loop().time()
+            if now - last_ping > 20:
+                try:
+                    await websocket.send_json({"ping": True})
+                except Exception:
+                    break
+                last_ping = now
 
 
 async def _stream_quote(websocket: WebSocket, symbol: str):

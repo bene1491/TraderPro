@@ -24,10 +24,6 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-# Shared session so cookies/crumb are reused across requests
-_session = requests.Session()
-_session.headers.update(HEADERS)
-
 # Currencies we convert TO EUR (everything else stays as-is)
 CONVERT_TO_EUR = {"USD", "GBp", "GBX", "GBP", "CNY", "JPY", "CHF", "CAD", "AUD", "HKD"}
 
@@ -52,7 +48,7 @@ def _get_eur_rate(from_currency: str) -> float | None:
         if now - ts < _FX_TTL:
             return rate
     try:
-        fx = yf.Ticker(pair, session=_session)
+        fx = yf.Ticker(pair)
         rate = fx.fast_info.last_price
         if rate:
             _fx_cache[pair] = (rate, now)
@@ -70,7 +66,7 @@ def _to_eur(value: float | None, rate: float | None) -> float | None:
 
 def search_assets(query: str, limit: int = 12) -> list[dict]:
     try:
-        s = yf.Search(query, max_results=limit, news_count=0, session=_session)
+        s = yf.Search(query, max_results=limit, news_count=0)
         quotes = s.quotes
         if quotes:
             return _map_quotes(quotes[:limit])
@@ -120,7 +116,7 @@ def _map_quotes(quotes: list) -> list[dict]:
 
 
 def get_quote(symbol: str) -> dict:
-    ticker = yf.Ticker(symbol, session=_session)
+    ticker = yf.Ticker(symbol)
 
     # fast_info uses the lightweight chart endpoint — more reliable on cloud IPs
     fi = None
@@ -251,7 +247,7 @@ def get_quote(symbol: str) -> dict:
 
 def get_history(symbol: str, period: str = "1Y") -> list[dict]:
     yf_period, interval = PERIOD_MAP.get(period.upper(), ("1y", "1d"))
-    ticker = yf.Ticker(symbol, session=_session)
+    ticker = yf.Ticker(symbol)
 
     # Get currency for this ticker
     try:
