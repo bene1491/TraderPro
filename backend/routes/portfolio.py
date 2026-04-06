@@ -6,9 +6,9 @@ from typing import List, Optional
 
 router = APIRouter()
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free"
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
+MODEL = "pixtral-12b-2409"
 
 SYSTEM_PROMPT = """Du bist ein erfahrener, unabhängiger Finanzanalyst. Du analysierst Portfolio-Screenshots eines Privatanlegers.
 
@@ -38,8 +38,8 @@ async def analyze_portfolio(
     images: List[UploadFile] = File(...),
     investment_style: Optional[str] = Form(default=""),
 ):
-    if not OPENROUTER_API_KEY:
-        raise HTTPException(status_code=500, detail="OpenRouter API key not configured.")
+    if not MISTRAL_API_KEY:
+        raise HTTPException(status_code=500, detail="Mistral API key not configured.")
     if not images:
         raise HTTPException(status_code=400, detail="Mindestens ein Screenshot erforderlich.")
     if len(images) > 5:
@@ -74,9 +74,9 @@ async def analyze_portfolio(
         }
 
         resp = http.post(
-            OPENROUTER_URL,
+            MISTRAL_URL,
             headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Authorization": f"Bearer {MISTRAL_API_KEY}",
                 "Content-Type": "application/json",
             },
             json=payload,
