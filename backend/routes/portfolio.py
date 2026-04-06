@@ -6,9 +6,9 @@ from typing import List, Optional
 
 router = APIRouter()
 
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
-MODEL = "pixtral-12b-2409"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODEL = "llama-3.2-11b-vision-preview"
 
 SYSTEM_PROMPT = """Du bist ein erfahrener, unabhängiger Finanzanalyst. Du analysierst Portfolio-Screenshots eines Privatanlegers.
 
@@ -38,8 +38,8 @@ async def analyze_portfolio(
     images: List[UploadFile] = File(...),
     investment_style: Optional[str] = Form(default=""),
 ):
-    if not MISTRAL_API_KEY:
-        raise HTTPException(status_code=500, detail="Mistral API key not configured.")
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="Groq API key not configured.")
     if not images:
         raise HTTPException(status_code=400, detail="Mindestens ein Screenshot erforderlich.")
     if len(images) > 5:
@@ -74,9 +74,9 @@ async def analyze_portfolio(
         }
 
         resp = http.post(
-            MISTRAL_URL,
+            GROQ_URL,
             headers={
-                "Authorization": f"Bearer {MISTRAL_API_KEY}",
+                "Authorization": f"Bearer {GROQ_API_KEY}",
                 "Content-Type": "application/json",
             },
             json=payload,
