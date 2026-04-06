@@ -28,7 +28,11 @@ export const api = {
   quote:    (symbol)         => request(`/api/quote/${symbol}`),
   history:  (symbol, period) => request(`/api/history/${symbol}?period=${period}`),
   news:     (symbol)         => request(`/api/news/${symbol}`),
-  batchQuotes:   (symbols) => request(`/api/quotes/batch?symbols=${symbols.map(encodeURIComponent).join(',')}`),
+  batchQuotes:     (symbols) => request(`/api/quotes/batch?symbols=${symbols.map(encodeURIComponent).join(',')}`),
+  portfolioChart:  (positions, period) => {
+    const posStr = positions.map(p => `${p.symbol}:${p.quantity}`).join(',')
+    return request(`/api/portfolio/chart?positions=${encodeURIComponent(posStr)}&period=${period}`, 30000)
+  },
   portfolioNews: (symbols) => request(`/api/portfolio/news?symbols=${symbols.map(encodeURIComponent).join(',')}`),
   gurus:         ()        => request('/api/gurus'),
   guruHoldings:  (cik)     => request(`/api/gurus/${cik}/holdings`, 30000),

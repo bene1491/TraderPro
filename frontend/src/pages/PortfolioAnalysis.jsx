@@ -208,24 +208,29 @@ function ConsentModal({ onAccept, onDecline, dark }) {
 
 // ── News Section ─────────────────────────────────────────────────────────────
 function NewsSection({ positionen, dark }) {
-  const [news, setNews]       = useState(null)  // null = loading, {} = done
-  const [error, setError]     = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [news,     setNews]     = useState(null)   // null = not yet fetched
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState(false)
+
   const sub  = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
   const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
   const div  = dark ? 'border-tp-border' : 'border-tp-border-l'
 
+  // Only fetch when the user expands for the first time
   useEffect(() => {
+    if (!expanded || news !== null) return
     const symbols = [...new Set(
       (positionen || []).map(p => p.symbol).filter(Boolean)
     )].slice(0, 8)
     if (!symbols.length) { setNews({}); return }
-
+    setLoading(true)
     api.portfolioNews(symbols)
       .then(d => setNews(d.news || {}))
       .catch(() => setError(true))
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+      .finally(() => setLoading(false))
+  }, [expanded])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Map symbol → position name for display
   const nameOf = (sym) =>
     (positionen || []).find(p => p.symbol === sym)?.name || sym
 
@@ -239,38 +244,62 @@ function NewsSection({ positionen, dark }) {
     return `${Math.round(diff / 86400000)}d`
   }
 
-  if (error) return null
-  if (news === null) return (
-    <div className={`flex items-center gap-2 pt-3 text-xs ${sub}`}>
-      <div className="w-3 h-3 rounded-full border border-current border-t-transparent animate-spin" />
-      News werden geladen…
-    </div>
-  )
-  const entries = Object.entries(news).filter(([, articles]) => articles.length)
-  if (!entries.length) return null
+  const entries = news ? Object.entries(news).filter(([, a]) => a.length) : []
 
   return (
-    <div className={`pt-4 mt-4 border-t ${div} space-y-4`}>
-      <div className={`flex items-center gap-2 text-sm font-semibold ${text}`}>
-        <Newspaper size={14} /> Aktuelle News
-      </div>
-      {entries.map(([sym, articles]) => (
-        <div key={sym}>
-          <div className={`text-xs font-semibold mb-1.5 ${sub} uppercase tracking-wide`}>{nameOf(sym)}</div>
-          <div className="space-y-2">
-            {articles.map((a, i) => (
-              <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
-                className={`flex items-start justify-between gap-2 group`}>
-                <div className="min-w-0">
-                  <div className={`text-xs leading-snug line-clamp-2 group-hover:text-tp-blue transition-colors ${text}`}>{a.title}</div>
-                  <div className={`text-[10px] mt-0.5 ${sub}`}>{a.publisher}{a.time ? ` · ${relTime(a.time)}` : ''}</div>
-                </div>
-                <ExternalLink size={11} className={`shrink-0 mt-0.5 ${sub} group-hover:text-tp-blue transition-colors`} />
-              </a>
-            ))}
-          </div>
+    <div className={`pt-4 mt-4 border-t ${div}`}>
+      {/* Always-visible toggle header */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center justify-between gap-2 group"
+      >
+        <div className={`flex items-center gap-2 text-sm font-semibold ${text}`}>
+          <Newspaper size={14} className="text-tp-blue" />
+          Aktuelle News
+          {entries.length > 0 && (
+            <span className={`text-xs font-normal ${sub}`}>
+              ({entries.reduce((s, [, a]) => s + a.length, 0)})
+            </span>
+          )}
         </div>
-      ))}
+        <div className={`flex items-center gap-1 text-xs font-medium ${sub} group-hover:text-tp-blue transition-colors`}>
+          {expanded ? 'Einklappen' : 'Anzeigen'}
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </div>
+      </button>
+
+      {/* Expandable content */}
+      {expanded && (
+        <div className="mt-3 space-y-4">
+          {loading && (
+            <div className={`flex items-center gap-2 text-xs ${sub}`}>
+              <div className="w-3 h-3 rounded-full border border-current border-t-transparent animate-spin" />
+              News werden geladen…
+            </div>
+          )}
+          {error && <p className="text-xs text-tp-red">News konnten nicht geladen werden.</p>}
+          {entries.map(([sym, articles]) => (
+            <div key={sym}>
+              <div className={`text-xs font-semibold mb-1.5 ${sub} uppercase tracking-wide`}>{nameOf(sym)}</div>
+              <div className="space-y-2">
+                {articles.map((a, i) => (
+                  <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-start justify-between gap-2 group/link">
+                    <div className="min-w-0">
+                      <div className={`text-xs leading-snug line-clamp-2 group-hover/link:text-tp-blue transition-colors ${text}`}>{a.title}</div>
+                      <div className={`text-[10px] mt-0.5 ${sub}`}>{a.publisher}{a.time ? ` · ${relTime(a.time)}` : ''}</div>
+                    </div>
+                    <ExternalLink size={11} className={`shrink-0 mt-0.5 ${sub} group-hover/link:text-tp-blue transition-colors`} />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
+          {news && !loading && entries.length === 0 && (
+            <p className={`text-xs ${sub}`}>Keine aktuellen News gefunden.</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

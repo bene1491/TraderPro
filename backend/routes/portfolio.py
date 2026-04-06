@@ -2,8 +2,9 @@ import os
 import re
 import json
 import base64
+import asyncio
 import requests as http
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from typing import List, Optional
 
 router = APIRouter()
@@ -164,3 +165,83 @@ async def portfolio_news(symbols: str):
 
     results = await asyncio.gather(*[fetch_one(s) for s in symbol_list])
     return {"news": {sym: articles for sym, articles in results if articles}}
+
+
+# ── Portfolio Chart ───────────────────────────────────────────────────────────
+
+_CHART_PERIOD_MAP = {
+    "1D":  ("1d",  "60m"),
+    "1W":  ("5d",  "1d"),
+    "1M":  ("1mo", "1d"),
+    "1Y":  ("1y",  "1wk"),
+    "5Y":  ("5y",  "1mo"),
+}
+
+
+@router.get("/portfolio/chart")
+async def portfolio_chart(
+    positions: str = Query(..., description="SYMBOL:QUANTITY pairs, comma-separated"),
+    period: str    = Query("1M"),
+):
+    """
+    Simulated portfolio value history.
+    positions = "AAPL:5,BTC-USD:0.003,MSFT:10"
+    Returns [{date, value}] — value is sum of (quantity × close_price) per date.
+    """
+    import yfinance as yf
+    import pandas as pd
+
+    # Parse positions string
+    pos_map: dict[str, float] = {}
+    for item in positions.split(","):
+        item = item.strip()
+        if ":" not in item:
+            continue
+        sym, qty_str = item.rsplit(":", 1)
+        try:
+            pos_map[sym.strip().upper()] = float(qty_str)
+        except ValueError:
+            pass
+
+    if not pos_map:
+        raise HTTPException(status_code=400, detail="Keine gültigen Positionen angegeben")
+
+    yf_period, yf_interval = _CHART_PERIOD_MAP.get(period.upper(), ("1mo", "1d"))
+
+    def _fetch():
+        series_list = []
+        for sym, qty in pos_map.items():
+            try:
+                hist = yf.Ticker(sym).history(period=yf_period, interval=yf_interval, auto_adjust=True)
+                if hist.empty:
+                    continue
+                close = hist["Close"].dropna()
+                # Normalise timezone so concat works
+                if close.index.tzinfo is not None:
+                    close.index = close.index.tz_convert("UTC").tz_localize(None)
+                series_list.append((close * qty).rename(sym))
+            except Exception:
+                continue
+
+        if not series_list:
+            return []
+
+        df = pd.concat(series_list, axis=1).ffill().dropna(how="all")
+        portfolio = df.sum(axis=1)
+
+        result = []
+        for ts, val in portfolio.items():
+            if pd.isna(val):
+                continue
+            result.append({
+                "date":  ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+                "value": round(float(val), 2),
+            })
+        return result
+
+    loop = asyncio.get_event_loop()
+    try:
+        data = await loop.run_in_executor(None, _fetch)
+        return {"data": data, "period": period.upper()}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Chart-Daten konnten nicht geladen werden: {e}")

@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Search, X, ChevronRight, Sparkles,
   TrendingUp, TrendingDown, Wrench, AlertTriangle, Loader2, BarChart2,
 } from 'lucide-react'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -244,6 +244,135 @@ function AddPositionSheet({ onClose, onAdd, dark }) {
   )
 }
 
+// ── Performance Chart ─────────────────────────────────────────────────────────
+const PERIODS = ['1D', '1W', '1M', '1Y', '5Y']
+
+function PortfolioPerformanceChart({ positions, totalValue, totalGain, totalGainPct, dark }) {
+  const [period,       setPeriod]       = useState('1M')
+  const [chartData,    setChartData]    = useState([])
+  const [chartLoading, setChartLoading] = useState(false)
+  const [periodChange, setPeriodChange] = useState(null)
+
+  const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
+  const sub  = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
+  const card = dark ? 'bg-tp-card border-tp-border' : 'bg-tp-card-l border-tp-border-l'
+
+  const posKey = positions.map(p => `${p.symbol}:${p.quantity}`).join(',')
+
+  useEffect(() => {
+    if (!posKey) { setChartData([]); return }
+    setChartLoading(true)
+    api.portfolioChart(positions, period)
+      .then(res => {
+        const data = res.data || []
+        setChartData(data)
+        if (data.length >= 2) {
+          const first = data[0].value
+          const last  = data[data.length - 1].value
+          setPeriodChange({ value: last - first, pct: (last - first) / first * 100 })
+        } else {
+          setPeriodChange(null)
+        }
+      })
+      .catch(() => { setChartData([]); setPeriodChange(null) })
+      .finally(() => setChartLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posKey, period])
+
+  const isUp      = periodChange ? periodChange.value >= 0 : (totalGain != null ? totalGain >= 0 : true)
+  const lineColor = isUp ? '#00b15d' : '#ef4444'
+  const gradId    = isUp ? 'pgUp' : 'pgDown'
+
+  return (
+    <div className={`rounded-3xl border overflow-hidden ${card}`}>
+      {/* Value header */}
+      <div className="px-5 pt-5 pb-2">
+        <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${sub}`}>Gesamtwert</div>
+        <div className={`text-4xl font-bold tracking-tight ${text}`}>
+          {totalValue > 0
+            ? `$${totalValue.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            : <span className={sub}>—</span>
+          }
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5">
+          {totalGain != null && (
+            <span className={`text-sm font-semibold ${totalGain >= 0 ? 'text-tp-green' : 'text-tp-red'}`}>
+              {totalGain >= 0 ? '+' : ''}
+              {totalGain.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              &nbsp;({fmtPct(totalGainPct)})
+            </span>
+          )}
+          {periodChange && (
+            <span className={`text-xs font-medium ${isUp ? 'text-tp-green' : 'text-tp-red'}`}>
+              {period}: {isUp ? '+' : ''}{periodChange.value.toLocaleString('de', { maximumFractionDigits: 0 })} ({fmtPct(periodChange.pct)})
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Chart area */}
+      <div style={{ height: 190 }} className="mt-2">
+        {chartLoading ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="w-5 h-5 rounded-full border-2 border-tp-blue border-t-transparent animate-spin" />
+          </div>
+        ) : chartData.length > 1 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={lineColor} stopOpacity={0.22} />
+                  <stop offset="95%" stopColor={lineColor} stopOpacity={0}    />
+                </linearGradient>
+              </defs>
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke={lineColor}
+                strokeWidth={2}
+                fill={`url(#${gradId})`}
+                dot={false}
+                activeDot={{ r: 4, fill: lineColor, strokeWidth: 0 }}
+              />
+              <Tooltip
+                formatter={(v) => [`$${v.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, '']}
+                contentStyle={{ background: dark ? '#1c1c1e' : '#fff', border: 'none', borderRadius: 12, fontSize: 12 }}
+                cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: '4 2' }}
+                labelFormatter={() => ''}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-full flex items-center justify-center">
+            <p className={`text-xs ${sub}`}>Keine Chartdaten verfügbar</p>
+          </div>
+        )}
+      </div>
+
+      {/* Period selector */}
+      <div className="flex items-center gap-1 px-4 pt-1 pb-3">
+        {PERIODS.map(p => (
+          <button
+            key={p}
+            onClick={() => setPeriod(p)}
+            className={`flex-1 py-1.5 rounded-xl text-xs font-semibold transition-colors
+              ${period === p
+                ? 'bg-tp-blue text-white'
+                : dark ? 'text-tp-sub hover:text-tp-text' : 'text-tp-sub-l hover:text-tp-text-l'
+              }`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+
+      <p className={`text-[10px] px-5 pb-3 ${sub} opacity-50`}>
+        Werte in Originalwährung · Verlauf simuliert (heutige Bestände × Historischer Kurs)
+      </p>
+    </div>
+  )
+}
+
 // ── Position Card ─────────────────────────────────────────────────────────────
 function PositionCard({ position, quote, onDelete, dark }) {
   const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
@@ -259,28 +388,27 @@ function PositionCard({ position, quote, onDelete, dark }) {
   const isUp         = gain != null ? gain >= 0 : null
 
   return (
-    <div className={`rounded-2xl border p-4 ${card}`}>
-      <div className="flex items-center gap-3">
-        <AssetLogo symbol={position.symbol} type={position.asset_type} size={42} />
+    <div className={`rounded-2xl border px-3 py-2.5 ${card}`}>
+      <div className="flex items-center gap-2.5">
+        <AssetLogo symbol={position.symbol} type={position.asset_type} size={36} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <span className={`font-bold text-sm ${text}`}>{position.symbol.replace(/-USD$/, '')}</span>
             {gain != null && (
-              <span className={`flex items-center gap-0.5 text-xs font-semibold ${isUp ? 'text-tp-green' : 'text-tp-red'}`}>
-                {isUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+              <span className={`flex items-center gap-0.5 text-[11px] font-semibold ${isUp ? 'text-tp-green' : 'text-tp-red'}`}>
+                {isUp ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
                 {fmtPct(gainPct)}
               </span>
             )}
           </div>
-          <div className={`text-xs truncate ${sub}`}>{position.name}</div>
-          <div className={`text-xs mt-0.5 ${sub}`}>
+          <div className={`text-xs ${sub}`}>
             {position.quantity % 1 === 0 ? position.quantity : position.quantity.toFixed(4)} Stück
-            {position.avg_price != null && ` · Ø ${fmtCurrency(position.avg_price, currency)}`}
+            {position.avg_price != null && <span className="opacity-70"> · Ø {fmtCurrency(position.avg_price, currency)}</span>}
           </div>
         </div>
         <div className="text-right shrink-0">
           {currentValue != null
-            ? <div className={`text-sm font-bold ${text}`}>{fmtCurrency(currentValue, currency)}</div>
+            ? <div className={`text-sm font-semibold ${text}`}>{fmtCurrency(currentValue, currency)}</div>
             : <div className={`text-sm ${sub}`}>—</div>
           }
           {gain != null && (
@@ -291,9 +419,9 @@ function PositionCard({ position, quote, onDelete, dark }) {
         </div>
         <button
           onClick={() => onDelete(position.id)}
-          className={`p-2 rounded-xl ml-1 transition-colors text-tp-red ${dark ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}
+          className={`p-1.5 rounded-xl transition-colors text-tp-red ${dark ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}
         >
-          <Trash2 size={15} />
+          <Trash2 size={14} />
         </button>
       </div>
     </div>
@@ -308,9 +436,8 @@ export default function Portfolio() {
   const toast                 = useToast()
   const { positions, loading, add, remove } = usePortfolioPositions()
 
-  const [quotes,        setQuotes]        = useState({})
-  const [quotesLoading, setQuotesLoading] = useState(false)
-  const [showAdd,       setShowAdd]       = useState(false)
+  const [quotes,   setQuotes]   = useState({})
+  const [showAdd,  setShowAdd]  = useState(false)
 
   const openAdd = () => { if (!user) { navigate('/auth'); return } setShowAdd(true) }
 
@@ -322,12 +449,10 @@ export default function Portfolio() {
   const fetchQuotes = useCallback(async () => {
     if (!positions.length) return
     const symbols = [...new Set(positions.map(p => p.symbol))]
-    setQuotesLoading(true)
     try {
       const data = await api.batchQuotes(symbols)
       setQuotes(data)
     } catch {}
-    finally { setQuotesLoading(false) }
   }, [positions])
 
   useEffect(() => { fetchQuotes() }, [fetchQuotes])
@@ -340,13 +465,12 @@ export default function Portfolio() {
     costBasis:    p.avg_price ? p.quantity * p.avg_price : null,
   }))
 
-  const totalValue    = positionsWithData.reduce((s, p) => s + (p.currentValue ?? 0), 0)
-  const totalCost     = positionsWithData.reduce((s, p) => s + (p.costBasis ?? 0), 0)
-  const totalGain     = totalCost > 0 ? totalValue - totalCost : null
-  const totalGainPct  = totalGain != null && totalCost > 0 ? (totalGain / totalCost) * 100 : null
-  const isUp          = totalGain != null ? totalGain >= 0 : null
+  const totalValue   = positionsWithData.reduce((s, p) => s + (p.currentValue ?? 0), 0)
+  const totalCost    = positionsWithData.reduce((s, p) => s + (p.costBasis ?? 0), 0)
+  const totalGain    = totalCost > 0 ? totalValue - totalCost : null
+  const totalGainPct = totalGain != null && totalCost > 0 ? (totalGain / totalCost) * 100 : null
 
-  const chartData = positionsWithData
+  const allocData = positionsWithData
     .filter(p => p.currentValue != null && p.currentValue > 0)
     .map((p, i) => ({ name: p.symbol.replace(/-USD$/, ''), value: p.currentValue, color: COLORS[i % COLORS.length] }))
 
@@ -384,58 +508,43 @@ export default function Portfolio() {
           <span>Dieses Feature befindet sich noch in aktiver Entwicklung. Es können Fehler auftreten oder Daten verloren gehen.</span>
         </div>
 
-        {/* Total value card */}
+        {/* Performance chart — shown when there are positions */}
         {positions.length > 0 && (
-          <div className={`rounded-3xl border p-5 ${card}`}>
-            <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${sub}`}>Gesamtwert</div>
-            {quotesLoading && totalValue === 0
-              ? <div className={`h-8 w-36 rounded-xl animate-pulse ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`} />
-              : <div className={`text-3xl font-bold tracking-tight ${text}`}>
-                  {totalValue > 0 ? `$${totalValue.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
-                </div>
-            }
-            {totalGain != null && (
-              <div className={`flex items-center gap-1.5 mt-1 text-sm font-semibold ${isUp ? 'text-tp-green' : 'text-tp-red'}`}>
-                {isUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                {isUp ? '+' : ''}{totalGain.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                <span className="opacity-80">({fmtPct(totalGainPct)})</span>
-              </div>
-            )}
-            <p className={`text-[10px] mt-2 ${sub} opacity-60`}>
-              Werte in Originalwährung · kein Währungsumrechnung
-            </p>
-          </div>
+          <PortfolioPerformanceChart
+            positions={positions}
+            totalValue={totalValue}
+            totalGain={totalGain}
+            totalGainPct={totalGainPct}
+            dark={dark}
+          />
         )}
 
-        {/* Allocation chart */}
-        {chartData.length >= 2 && (
-          <div className={`rounded-3xl border p-5 ${card}`}>
-            <div className={`text-sm font-semibold mb-4 ${text}`}>Aufteilung</div>
-            <div className="flex gap-4 items-center">
-              <div style={{ width: 110, height: 110, flexShrink: 0 }}>
+        {/* Allocation donut — only when ≥ 2 positions with prices */}
+        {allocData.length >= 2 && (
+          <div className={`rounded-3xl border p-4 ${card}`}>
+            <div className={`text-xs font-semibold uppercase tracking-wide mb-3 ${sub}`}>Aufteilung</div>
+            <div className="flex gap-3 items-center">
+              <div style={{ width: 90, height: 90, flexShrink: 0 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={chartData} dataKey="value" cx="50%" cy="50%" innerRadius={28} outerRadius={50} strokeWidth={0}>
-                      {chartData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    <Pie data={allocData} dataKey="value" cx="50%" cy="50%" innerRadius={22} outerRadius={42} strokeWidth={0}>
+                      {allocData.map((e, i) => <Cell key={i} fill={e.color} />)}
                     </Pie>
-                    <Tooltip
-                      formatter={(v) => [`$${v.toLocaleString('de', { maximumFractionDigits: 0 })}`, '']}
-                      contentStyle={{ background: dark ? '#1c1c1e' : '#fff', border: 'none', borderRadius: 10, fontSize: 11 }}
-                    />
+                    <Tooltip formatter={(v) => [`$${v.toLocaleString('de', { maximumFractionDigits: 0 })}`, '']}
+                      contentStyle={{ background: dark ? '#1c1c1e' : '#fff', border: 'none', borderRadius: 10, fontSize: 11 }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="flex-1 space-y-1.5 min-w-0">
-                {chartData.map((entry, i) => {
-                  const pct = totalValue > 0 ? (entry.value / totalValue * 100).toFixed(1) : '0'
-                  return (
-                    <div key={i} className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: entry.color }} />
-                      <div className={`text-xs truncate flex-1 ${sub}`}>{entry.name}</div>
-                      <div className={`text-xs font-semibold shrink-0 ${text}`}>{pct}%</div>
+              <div className="flex-1 space-y-1 min-w-0">
+                {allocData.map((e, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: e.color }} />
+                    <div className={`text-xs truncate flex-1 ${sub}`}>{e.name}</div>
+                    <div className={`text-xs font-semibold shrink-0 ${text}`}>
+                      {totalValue > 0 ? (e.value / totalValue * 100).toFixed(1) : '0'}%
                     </div>
-                  )
-                })}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
