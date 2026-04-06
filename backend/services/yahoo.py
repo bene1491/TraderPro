@@ -24,6 +24,59 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+# US market holidays (NYSE) — add each year as needed
+_NYSE_HOLIDAYS = {
+    datetime.date(2025, 1, 1), datetime.date(2025, 1, 20), datetime.date(2025, 2, 17),
+    datetime.date(2025, 4, 18), datetime.date(2025, 5, 26), datetime.date(2025, 6, 19),
+    datetime.date(2025, 7, 4), datetime.date(2025, 9, 1), datetime.date(2025, 11, 27),
+    datetime.date(2025, 12, 25),
+    datetime.date(2026, 1, 1), datetime.date(2026, 1, 19), datetime.date(2026, 2, 16),
+    datetime.date(2026, 4, 3),  # Good Friday 2026
+    datetime.date(2026, 5, 25), datetime.date(2026, 6, 19), datetime.date(2026, 7, 3),
+    datetime.date(2026, 9, 7), datetime.date(2026, 11, 26), datetime.date(2026, 12, 25),
+}
+
+
+def _infer_market_state(symbol: str, exchange: str) -> str:
+    """
+    Time-based market state fallback when yfinance doesn't return a reliable value.
+    All times in UTC.
+    """
+    now_utc  = datetime.datetime.now(datetime.timezone.utc)
+    today    = now_utc.date()
+    weekday  = today.weekday()   # 0=Mon … 6=Sun
+    hhmm     = now_utc.hour * 100 + now_utc.minute
+    sym_up   = symbol.upper()
+
+    # European exchanges (.DE, .L, .PA, .AS, .MI, .MC …)
+    eu_suffixes = (".DE", ".L", ".PA", ".AS", ".MI", ".MC", ".VI", ".F")
+    if any(sym_up.endswith(s) for s in eu_suffixes):
+        # Mon-Fri 07:00-21:00 UTC (rough Xetra/LSE coverage)
+        if weekday >= 5 or hhmm < 700 or hhmm >= 2100:
+            return "CLOSED"
+        return "REGULAR"
+
+    # Futures / commodities (GC=F, CL=F, …)
+    if "=F" in sym_up:
+        # CME roughly Sun 23:00 – Fri 22:00 UTC with a 1h daily break
+        if weekday == 5:  # Saturday always closed
+            return "CLOSED"
+        if weekday == 6 and hhmm < 2300:  # Sunday before 23:00 UTC
+            return "CLOSED"
+        return "REGULAR"
+
+    # Default: assume US equity — NYSE/NASDAQ Mon-Fri 13:30-20:00 UTC
+    if weekday >= 5 or today in _NYSE_HOLIDAYS:
+        return "CLOSED"
+    if 1330 <= hhmm < 2000:
+        return "REGULAR"
+    if 1300 <= hhmm < 1330:
+        return "PRE"
+    if 2000 <= hhmm < 2400:
+        return "POST"
+    return "CLOSED"
+
+
 # Currencies we convert TO EUR (everything else stays as-is)
 CONVERT_TO_EUR = {"USD", "GBp", "GBX", "GBP", "CNY", "JPY", "CHF", "CAD", "AUD", "HKD"}
 
@@ -178,12 +231,14 @@ def get_quote(symbol: str) -> dict:
 
     # Market state
     quote_type = info.get("quoteType") or (fi.quote_type if fi else None) or ""
+    exchange   = info.get("fullExchangeName") or info.get("exchange", "")
 
     # Crypto is 24/7 — never closed
     if quote_type == "CRYPTOCURRENCY" or "-USD" in symbol.upper() or "-EUR" in symbol.upper():
         market_state = "REGULAR"
     else:
-        market_state = "CLOSED"
+        # Try yfinance first
+        market_state = None
         if fi:
             try:
                 ms = fi.market_state
@@ -191,8 +246,15 @@ def get_quote(symbol: str) -> dict:
                     market_state = ms
             except Exception:
                 pass
-        if market_state == "CLOSED":
-            market_state = info.get("marketState", "CLOSED")
+        if not market_state:
+            market_state = info.get("marketState")
+
+        # yfinance unreliable on cloud IPs → use time-based fallback
+        if not market_state or market_state == "CLOSED":
+            inferred = _infer_market_state(symbol, exchange)
+            # Only upgrade CLOSED→REGULAR via inference, never override a known PRE/POST
+            if market_state != "PRE" and market_state != "POST":
+                market_state = inferred
 
     last_trade_ts  = info.get("regularMarketTime")
     last_trade_iso = None
