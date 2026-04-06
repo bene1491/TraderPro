@@ -6,8 +6,9 @@ from typing import List, Optional
 
 router = APIRouter()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free"
 
 SYSTEM_PROMPT = """Du bist ein erfahrener, unabhängiger Finanzanalyst. Du analysierst Portfolio-Screenshots eines Privatanlegers.
 
@@ -37,56 +38,55 @@ async def analyze_portfolio(
     images: List[UploadFile] = File(...),
     investment_style: Optional[str] = Form(default=""),
 ):
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="Gemini API key not configured.")
+    if not OPENROUTER_API_KEY:
+        raise HTTPException(status_code=500, detail="OpenRouter API key not configured.")
     if not images:
         raise HTTPException(status_code=400, detail="Mindestens ein Screenshot erforderlich.")
     if len(images) > 5:
         raise HTTPException(status_code=400, detail="Maximal 5 Screenshots erlaubt.")
 
     try:
-        parts = []
+        # Build message content: images first, then text prompt
+        content = []
 
-        # Add images as inline_data
         for img in images:
-            content = await img.read()
+            data = await img.read()
             mime = img.content_type or "image/jpeg"
-            parts.append({
-                "inline_data": {
-                    "mime_type": mime,
-                    "data": base64.b64encode(content).decode("utf-8"),
-                }
+            b64 = base64.b64encode(data).decode("utf-8")
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{b64}"}
             })
 
-        # Build text prompt
         prompt = SYSTEM_PROMPT
         if investment_style and investment_style.strip():
             prompt += f"\n\n**Anlagestil des Users:** {investment_style.strip()}"
         else:
             prompt += "\n\n**Anlagestil des Users:** Keine Angabe."
 
-        parts.append({"text": prompt})
+        content.append({"type": "text", "text": prompt})
 
         payload = {
-            "contents": [{"parts": parts}],
-            "generationConfig": {
-                "temperature": 0.4,
-                "maxOutputTokens": 2048,
-            }
+            "model": MODEL,
+            "messages": [{"role": "user", "content": content}],
+            "max_tokens": 2048,
+            "temperature": 0.4,
         }
 
         resp = http.post(
-            GEMINI_URL,
-            params={"key": GEMINI_API_KEY},
+            OPENROUTER_URL,
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
             json=payload,
             timeout=60,
         )
 
         if not resp.ok:
-            raise HTTPException(status_code=502, detail=f"Gemini Fehler: {resp.text}")
+            raise HTTPException(status_code=502, detail=f"Analyse fehlgeschlagen: {resp.text}")
 
-        data = resp.json()
-        result = data["candidates"][0]["content"]["parts"][0]["text"]
+        result = resp.json()["choices"][0]["message"]["content"]
         return {"analysis": result}
 
     except HTTPException:
