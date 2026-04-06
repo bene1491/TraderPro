@@ -84,6 +84,36 @@ CONVERT_TO_EUR = {"USD", "GBp", "GBX", "GBP", "CNY", "JPY", "CHF", "CAD", "AUD",
 _fx_cache: dict[str, tuple[float, datetime.datetime]] = {}
 _FX_TTL = datetime.timedelta(minutes=5)
 
+# ticker.info cache (TTL 30 min) — description, analyst data, sector etc. rarely change
+_info_cache: dict[str, tuple[dict, datetime.datetime]] = {}
+_INFO_TTL = datetime.timedelta(minutes=30)
+
+
+def _get_ticker_info(symbol: str) -> dict:
+    """Fetch ticker.info with a 30-min cache. Returns last known data on failure."""
+    now = datetime.datetime.utcnow()
+    if symbol in _info_cache:
+        cached, ts = _info_cache[symbol]
+        if now - ts < _INFO_TTL:
+            return cached
+        # Cache stale — try to refresh, but keep old data as fallback
+        try:
+            fresh = yf.Ticker(symbol).info or {}
+            if fresh:
+                _info_cache[symbol] = (fresh, now)
+                return fresh
+        except Exception:
+            pass
+        return cached  # return stale data rather than empty dict
+    # No cache yet
+    try:
+        data = yf.Ticker(symbol).info or {}
+        if data:
+            _info_cache[symbol] = (data, now)
+        return data
+    except Exception:
+        return {}
+
 
 def _get_eur_rate(from_currency: str) -> float | None:
     """Return how many EUR 1 unit of from_currency is worth."""
@@ -178,12 +208,8 @@ def get_quote(symbol: str) -> dict:
     except Exception:
         pass
 
-    # ticker.info uses quoteSummary — may fail on rate-limited IPs; always try separately
-    info = {}
-    try:
-        info = ticker.info or {}
-    except Exception:
-        pass
+    # ticker.info: use long-lived cache so description/analyst data survives intermittent failures
+    info = _get_ticker_info(symbol)
 
     price = prev_close = None
     if fi:
