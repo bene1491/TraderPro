@@ -65,14 +65,17 @@ def _infer_market_state(symbol: str, exchange: str) -> str:
             return "CLOSED"
         return "REGULAR"
 
-    # Default: assume US equity — NYSE/NASDAQ Mon-Fri 13:30-20:00 UTC
+    # Default: assume US equity — NYSE/NASDAQ
+    # Pre-market:  04:00–09:30 ET = 08:00–13:30 UTC
+    # Regular:     09:30–16:00 ET = 13:30–20:00 UTC
+    # After-hours: 16:00–20:00 ET = 20:00–00:00 UTC
     if weekday >= 5 or today in _NYSE_HOLIDAYS:
         return "CLOSED"
     if 1330 <= hhmm < 2000:
         return "REGULAR"
-    if 1300 <= hhmm < 1330:
+    if 800 <= hhmm < 1330:
         return "PRE"
-    if 2000 <= hhmm < 2400:
+    if hhmm >= 2000:
         return "POST"
     return "CLOSED"
 
