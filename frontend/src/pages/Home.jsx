@@ -422,6 +422,35 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Guru Tracker Widget */}
+      <button
+        onClick={() => navigate('/guru')}
+        className={`w-full rounded-2xl border p-4 text-left transition-colors ${dark ? 'bg-tp-card border-tp-border hov-dark' : 'bg-tp-card-l border-tp-border-l hov-light'}`}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-tp-blue/15 flex items-center justify-center shrink-0">
+              <TrendingUp size={17} className="text-tp-blue" />
+            </div>
+            <div>
+              <div className={`text-sm font-semibold ${dark ? 'text-tp-text' : 'text-tp-text-l'}`}>Guru Tracker</div>
+              <div className={`text-xs ${dark ? 'text-tp-sub' : 'text-tp-sub-l'}`}>Was kaufen Buffett &amp; Co. gerade?</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex -space-x-1.5">
+              {[['WB','#3b82f6'],['MB','#ef4444'],['BA','#8b5cf6'],['SD','#f59e0b']].map(([init, color]) => (
+                <div key={init} className="w-6 h-6 rounded-full border-2 flex items-center justify-center text-[8px] font-bold text-white"
+                  style={{ background: color, borderColor: dark ? '#1c1c1e' : '#f2f2f7' }}>
+                  {init}
+                </div>
+              ))}
+            </div>
+            <ChevronRight size={15} className={dark ? 'text-tp-sub' : 'text-tp-sub-l'} />
+          </div>
+        </div>
+      </button>
+
       {/* Categories */}
       <div>
         <h2 className={`text-xs font-semibold uppercase tracking-wider mb-3 ${sub}`}>Kategorien</h2>

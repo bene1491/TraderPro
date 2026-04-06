@@ -8,6 +8,7 @@ from routes.quotes    import router as quotes_router
 from routes.ws        import router as ws_router
 from routes.news      import router as news_router
 from routes.portfolio import router as portfolio_router
+from routes.guru      import router as guru_router
 
 load_dotenv()
 
@@ -33,6 +34,7 @@ app.include_router(quotes_router,    prefix="/api", tags=["quotes"])
 app.include_router(ws_router,        prefix="/api", tags=["ws"])
 app.include_router(news_router,      prefix="/api", tags=["news"])
 app.include_router(portfolio_router, prefix="/api", tags=["portfolio"])
+app.include_router(guru_router,      prefix="/api", tags=["guru"])
 
 
 @app.get("/health")

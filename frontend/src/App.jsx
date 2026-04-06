@@ -14,6 +14,7 @@ import Auth       from './pages/Auth'
 import Account    from './pages/Account'
 import Calculator from './pages/Calculator'
 import Portfolio  from './pages/Portfolio'
+import Guru       from './pages/Guru'
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/watchlist"    element={<Watchlist />} />
         <Route path="/calculator"   element={<Calculator />} />
         <Route path="/portfolio"    element={<Portfolio />} />
+        <Route path="/guru"         element={<Guru />} />
         <Route path="/auth"         element={<Auth />} />
         <Route path="/account"      element={<Account />} />
         <Route path="*"             element={<Navigate to="/" replace />} />
