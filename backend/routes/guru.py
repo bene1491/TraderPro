@@ -65,58 +65,79 @@ def _candidate_ciks(company_cik: str, accnum: str) -> list[str]:
 def _fetch_infotable_xml(company_cik: str, accnum: str) -> str:
     accnum_nd = accnum.replace("-", "")
 
+    # Many large filers (e.g. Berkshire via Donnelley) store XMLs in xslForm13F_X0N/ subdirs.
+    PROBE_PATHS = [
+        "xslForm13F_X01/form13fInfoTable.xml",
+        "xslForm13F_X02/form13fInfoTable.xml",
+        "xslForm13F_X03/form13fInfoTable.xml",
+        "xslForm13F_X04/form13fInfoTable.xml",
+        "form13fInfoTable.xml",
+        "infotable.xml",
+        "informationtable.xml",
+        "13fInfoTable.xml",
+    ]
+
+    def _is_infotable(text: str) -> bool:
+        low = text.lower()
+        return "<infotable" in low or "<informationtable" in low
+
     for path_cik in _candidate_ciks(company_cik, accnum):
-        # 1. Try the EDGAR index JSON to locate the exact filename
-        idx_url = (
-            f"https://www.sec.gov/Archives/edgar/data/{path_cik}"
-            f"/{accnum_nd}/{accnum}-index.json"
-        )
+        base = f"https://www.sec.gov/Archives/edgar/data/{path_cik}/{accnum_nd}"
+
+        # 1. Probe known paths (fastest, covers ~95% of filings)
+        for fname in PROBE_PATHS:
+            try:
+                r = http.get(f"{base}/{fname}", headers={**EDGAR_HEADERS, "Accept": "*/*"}, timeout=10)
+                if r.ok and _is_infotable(r.text):
+                    return r.text
+            except Exception:
+                continue
+
+        # 2. Try the filing index JSON — handles both known response formats
+        idx_url = f"{base}/{accnum}-index.json"
         try:
             idx_resp = http.get(idx_url, headers=EDGAR_HEADERS, timeout=10)
             if idx_resp.ok:
-                docs = idx_resp.json().get("documents", [])
+                raw = idx_resp.json()
+                # Format A: {"documents": [...]}  Format B: {"directory": {"item": [...]}}
+                docs = raw.get("documents") or raw.get("directory", {}).get("item", [])
                 for doc in docs:
+                    dname = (doc.get("document") or doc.get("name") or "").strip()
                     dtype = doc.get("type", "").upper()
-                    dname = doc.get("document", "").lower()
-                    if "information table" in dtype or "infotable" in dname or (
-                        dname.endswith(".xml") and "primary" not in dtype.lower()
-                        and "13f-hr" not in dtype.lower()
-                    ):
-                        doc_url = (
-                            f"https://www.sec.gov/Archives/edgar/data/{path_cik}"
-                            f"/{accnum_nd}/{doc['document']}"
-                        )
-                        r = http.get(doc_url, headers={**EDGAR_HEADERS, "Accept": "*/*"}, timeout=20)
-                        if r.ok and "<" in r.text:
+                    if not dname or doc.get("type") == "folder":
+                        continue
+                    if "information table" in dtype or "infotable" in dname.lower():
+                        r = http.get(f"{base}/{dname}", headers={**EDGAR_HEADERS, "Accept": "*/*"}, timeout=15)
+                        if r.ok and _is_infotable(r.text):
                             return r.text
         except Exception:
             pass
 
-        # 2. Fallback: probe common filenames
-        for fname in ["infotable.xml", "informationtable.xml", "form13fInfoTable.xml",
-                      "13fInfoTable.xml", "primarydocument.xml"]:
-            url = (
-                f"https://www.sec.gov/Archives/edgar/data/{path_cik}"
-                f"/{accnum_nd}/{fname}"
-            )
-            try:
-                r = http.get(url, headers={**EDGAR_HEADERS, "Accept": "*/*"}, timeout=10)
-                if r.ok and "<infoTable" in r.text:
-                    return r.text
-            except Exception:
-                continue
+        # 3. Last resort: scrape the HTML filing index for XML href links
+        try:
+            html_resp = http.get(f"{base}/{accnum}-index.htm",
+                                 headers={**EDGAR_HEADERS, "Accept": "text/html"}, timeout=10)
+            if html_resp.ok:
+                for link in re.findall(r'href="([^"]+\.xml)"', html_resp.text, re.IGNORECASE):
+                    url = link if link.startswith("http") else (
+                        f"https://www.sec.gov{link}" if link.startswith("/") else f"{base}/{link}"
+                    )
+                    r = http.get(url, headers={**EDGAR_HEADERS, "Accept": "*/*"}, timeout=15)
+                    if r.ok and _is_infotable(r.text):
+                        return r.text
+        except Exception:
+            pass
 
     raise ValueError(f"Infotable XML nicht gefunden für {accnum}")
 
 
 def _strip_namespaces(xml_text: str) -> str:
-    """Remove XML namespace declarations and prefixes so ET can parse cleanly."""
-    # Strip BOM / leading whitespace
-    text = xml_text.lstrip("\ufeff\r\n\t ")
-    # Remove namespace declarations:  xmlns="..." or xmlns:ns="..."
-    text = re.sub(r'\s+xmlns(?::[a-zA-Z0-9_-]+)?="[^"]*"', "", text)
-    # Remove namespace prefixes from tags: <ns:tag  →  <tag  and </ns:tag  →  </tag
-    text = re.sub(r"<(/?)(?:[a-zA-Z0-9_-]+:)([a-zA-Z0-9_][a-zA-Z0-9_.-]*)", r"<\1\2", text)
+    """Remove XML namespace declarations, prefixes and ns-prefixed attributes."""
+    text = xml_text.lstrip("\ufeff\r\n\t ")          # strip BOM / leading whitespace
+    text = re.sub(r'\s+xmlns(?::[a-zA-Z0-9_-]+)?="[^"]*"', "", text)       # xmlns declarations
+    text = re.sub(r'\s+xmlns(?::[a-zA-Z0-9_-]+)?=\'[^\']*\'', "", text)    # single-quote variant
+    text = re.sub(r'\s+[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+="[^"]*"', "", text)  # ns-prefixed attributes (e.g. xsi:nil="...")
+    text = re.sub(r"<(/?)(?:[a-zA-Z0-9_-]+:)([a-zA-Z0-9_][a-zA-Z0-9_.-]*)", r"<\1\2", text)  # tag prefixes
     return text
 
 

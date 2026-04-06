@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Trash2, Search, X, ChevronRight, Sparkles,
-  TrendingUp, TrendingDown, Wrench, AlertTriangle, Loader2,
+  TrendingUp, TrendingDown, Wrench, AlertTriangle, Loader2, BarChart2,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useTheme } from '../context/ThemeContext'
@@ -58,10 +58,27 @@ function AddPositionSheet({ onClose, onAdd, dark }) {
     ? 'bg-tp-border border-tp-border text-tp-text placeholder-tp-sub focus:border-tp-blue'
     : 'bg-tp-border-l border-tp-border-l text-tp-text-l placeholder-tp-sub-l focus:border-tp-blue'
 
+  // Scroll lock (same as CategorySheet)
+  useEffect(() => {
+    const y = window.scrollY
+    document.body.style.position = 'fixed'
+    document.body.style.top      = `-${y}px`
+    document.body.style.width    = '100%'
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.position = ''
+      document.body.style.top      = ''
+      document.body.style.width    = ''
+      document.body.style.overflow = ''
+      window.scrollTo(0, y)
+    }
+  }, [])
+
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80) }, [])
 
   useEffect(() => {
-    if (!debounced.trim()) { setResults([]); return }
+    // Bug fix: if query cleared while request in-flight, loading must still reset
+    if (!debounced.trim()) { setResults([]); setLoading(false); return }
     let cancelled = false
     setLoading(true)
     api.search(debounced)
@@ -181,15 +198,18 @@ function AddPositionSheet({ onClose, onAdd, dark }) {
                     ref={qtyRef}
                     type="number"
                     inputMode="decimal"
-                    placeholder="z.B. 10 oder 0.5"
+                    placeholder="z.B. 5 oder 0.00312"
                     value={quantity}
                     onChange={e => setQuantity(e.target.value)}
                     className={`w-full px-4 py-3.5 rounded-2xl border outline-none transition-colors text-sm ${input}`}
                   />
+                  <p className={`text-xs mt-1.5 ${sub}`}>
+                    In deiner Broker-App unter „Anteile" oder „Stück"
+                  </p>
                 </div>
                 <div>
                   <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 block ${sub}`}>
-                    Ø Kaufpreis <span className={`font-normal normal-case ${sub}`}>(optional)</span>
+                    Einstiegskurs <span className={`font-normal normal-case ${sub}`}>(optional)</span>
                   </label>
                   <input
                     type="number"
@@ -200,7 +220,7 @@ function AddPositionSheet({ onClose, onAdd, dark }) {
                     className={`w-full px-4 py-3.5 rounded-2xl border outline-none transition-colors text-sm ${input}`}
                   />
                   <p className={`text-xs mt-1.5 ${sub}`}>
-                    Zum Berechnen deiner Gewinne / Verluste
+                    Ø Kaufpreis pro Stück — in Trade Republic als „Einstieg" bezeichnet. Wird für Gewinn/Verlust benötigt.
                   </p>
                 </div>
               </div>
@@ -288,9 +308,11 @@ export default function Portfolio() {
   const toast                 = useToast()
   const { positions, loading, add, remove } = usePortfolioPositions()
 
-  const [quotes,       setQuotes]       = useState({})
+  const [quotes,        setQuotes]        = useState({})
   const [quotesLoading, setQuotesLoading] = useState(false)
-  const [showAdd,      setShowAdd]      = useState(false)
+  const [showAdd,       setShowAdd]       = useState(false)
+
+  const openAdd = () => { if (!user) { navigate('/auth'); return } setShowAdd(true) }
 
   const text  = dark ? 'text-tp-text'  : 'text-tp-text-l'
   const sub   = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
@@ -429,8 +451,8 @@ export default function Portfolio() {
         ) : positions.length === 0 ? (
           /* Empty state */
           <div className={`rounded-3xl border p-10 flex flex-col items-center text-center gap-4 ${card}`}>
-            <div className={`w-16 h-16 rounded-3xl flex items-center justify-center text-3xl ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`}>
-              📊
+            <div className={`w-16 h-16 rounded-3xl flex items-center justify-center ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`}>
+              <BarChart2 size={32} className={sub} />
             </div>
             <div>
               <div className={`text-base font-bold ${text}`}>Noch keine Positionen</div>
@@ -439,7 +461,7 @@ export default function Portfolio() {
               </div>
             </div>
             <button
-              onClick={() => setShowAdd(true)}
+              onClick={openAdd}
               className="px-6 py-3 rounded-2xl bg-tp-blue text-white text-sm font-semibold hover:opacity-90 transition-opacity"
             >
               Erste Position hinzufügen
@@ -466,7 +488,7 @@ export default function Portfolio() {
         {/* Add button */}
         {positions.length > 0 && (
           <button
-            onClick={() => setShowAdd(true)}
+            onClick={openAdd}
             className={`w-full py-4 rounded-2xl border-2 border-dashed flex items-center justify-center gap-2 transition-colors font-medium text-sm
               ${dark ? 'border-tp-border text-tp-sub hover:border-tp-blue hover:text-tp-blue' : 'border-tp-border-l text-tp-sub-l hover:border-tp-blue hover:text-tp-blue'}`}
           >
