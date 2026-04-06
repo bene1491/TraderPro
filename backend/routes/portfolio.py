@@ -20,7 +20,7 @@ Das JSON muss exakt diesem Schema entsprechen:
 {
   "gesamtwert": <Zahl in EUR oder null falls nicht erkennbar>,
   "positionen": [
-    {"name": "<Name>", "wert": <Zahl|null>, "anteil": <Prozent als Zahl>, "kategorie": "<ETF|Aktie|Krypto|Anleihe|Sonstiges>"}
+    {"name": "<Name>", "symbol": "<yfinance-Symbol z.B. AAPL, BTC-USD, VWCE.DE oder null>", "wert": <Zahl|null>, "anteil": <Prozent als Zahl>, "kategorie": "<ETF|Aktie|Krypto|Anleihe|Sonstiges>"}
   ],
   "klassen": [
     {"name": "<Klassenname>", "anteil": <Prozent als Zahl>}
@@ -39,6 +39,7 @@ Wichtig:
 - Schätze Werte wenn nicht direkt sichtbar
 - Berücksichtige den Anlagestil des Users bei Redundanzen (falls angegeben)
 - Anteil-Werte sind immer Zahlen (z.B. 59.7 nicht "59.7%")
+- symbol: gültiges yfinance-Ticker-Symbol (AAPL, MSFT, BTC-USD, ETH-USD, VWCE.DE, SPY, …) oder null für Cash/Sonstiges
 """
 
 
@@ -111,3 +112,55 @@ async def analyze_portfolio(
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Analyse fehlgeschlagen: {str(e)}")
+
+
+def _parse_news_item(item: dict) -> dict | None:
+    """Handle both old and new yfinance news format."""
+    try:
+        if "content" in item:
+            c = item["content"]
+            url = (c.get("canonicalUrl") or c.get("clickThroughUrl") or {}).get("url", "")
+            publisher = (c.get("provider") or {}).get("displayName", "")
+            return {"title": c.get("title", ""), "publisher": publisher, "url": url, "time": c.get("pubDate")}
+        return {
+            "title": item.get("title", ""),
+            "publisher": item.get("publisher", ""),
+            "url": item.get("link", ""),
+            "time": item.get("providerPublishTime"),
+        }
+    except Exception:
+        return None
+
+
+@router.get("/portfolio/news")
+async def portfolio_news(symbols: str):
+    """Fetch latest news for comma-separated yfinance symbols."""
+    import asyncio
+    import yfinance as yf
+
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:8]
+
+    loop = asyncio.get_event_loop()
+
+    async def fetch_one(sym: str):
+        def _fetch():
+            try:
+                items = yf.Ticker(sym).news or []
+                seen, result = set(), []
+                for item in items[:8]:
+                    parsed = _parse_news_item(item)
+                    if not parsed or not parsed["title"] or not parsed["url"]:
+                        continue
+                    if parsed["title"] in seen:
+                        continue
+                    seen.add(parsed["title"])
+                    result.append(parsed)
+                    if len(result) >= 3:
+                        break
+                return result
+            except Exception:
+                return []
+        return sym, await loop.run_in_executor(None, _fetch)
+
+    results = await asyncio.gather(*[fetch_one(s) for s in symbol_list])
+    return {"news": {sym: articles for sym, articles in results if articles}}

@@ -28,6 +28,7 @@ export const api = {
   quote:    (symbol)         => request(`/api/quote/${symbol}`),
   history:  (symbol, period) => request(`/api/history/${symbol}?period=${period}`),
   news:     (symbol)         => request(`/api/news/${symbol}`),
+  portfolioNews: (symbols) => request(`/api/portfolio/news?symbols=${symbols.map(encodeURIComponent).join(',')}`),
   analyzePortfolio: async (images, investmentStyle) => {
     const formData = new FormData()
     images.forEach(img => formData.append('images', img))

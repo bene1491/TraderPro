@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload, X, Sparkles, Save, Trash2, ChevronDown, ChevronUp, AlertTriangle, LogIn, TrendingUp, AlertCircle, CheckCircle, Target } from 'lucide-react'
+import { Upload, X, Sparkles, Save, Trash2, ChevronDown, ChevronUp, AlertTriangle, LogIn, TrendingUp, AlertCircle, CheckCircle, Target, Newspaper, ExternalLink } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
@@ -206,6 +206,75 @@ function ConsentModal({ onAccept, onDecline, dark }) {
   )
 }
 
+// ── News Section ─────────────────────────────────────────────────────────────
+function NewsSection({ positionen, dark }) {
+  const [news, setNews]       = useState(null)  // null = loading, {} = done
+  const [error, setError]     = useState(false)
+  const sub  = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
+  const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
+  const div  = dark ? 'border-tp-border' : 'border-tp-border-l'
+
+  useEffect(() => {
+    const symbols = [...new Set(
+      (positionen || []).map(p => p.symbol).filter(Boolean)
+    )].slice(0, 8)
+    if (!symbols.length) { setNews({}); return }
+
+    api.portfolioNews(symbols)
+      .then(d => setNews(d.news || {}))
+      .catch(() => setError(true))
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Map symbol → position name for display
+  const nameOf = (sym) =>
+    (positionen || []).find(p => p.symbol === sym)?.name || sym
+
+  function relTime(t) {
+    if (!t) return ''
+    const ms = typeof t === 'number' ? t * 1000 : Date.parse(t)
+    if (!ms) return ''
+    const diff = Date.now() - ms
+    if (diff < 3600000) return `${Math.round(diff / 60000)}m`
+    if (diff < 86400000) return `${Math.round(diff / 3600000)}h`
+    return `${Math.round(diff / 86400000)}d`
+  }
+
+  if (error) return null
+  if (news === null) return (
+    <div className={`flex items-center gap-2 pt-3 text-xs ${sub}`}>
+      <div className="w-3 h-3 rounded-full border border-current border-t-transparent animate-spin" />
+      News werden geladen…
+    </div>
+  )
+  const entries = Object.entries(news).filter(([, articles]) => articles.length)
+  if (!entries.length) return null
+
+  return (
+    <div className={`pt-4 mt-4 border-t ${div} space-y-4`}>
+      <div className={`flex items-center gap-2 text-sm font-semibold ${text}`}>
+        <Newspaper size={14} /> Aktuelle News
+      </div>
+      {entries.map(([sym, articles]) => (
+        <div key={sym}>
+          <div className={`text-xs font-semibold mb-1.5 ${sub} uppercase tracking-wide`}>{nameOf(sym)}</div>
+          <div className="space-y-2">
+            {articles.map((a, i) => (
+              <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
+                className={`flex items-start justify-between gap-2 group`}>
+                <div className="min-w-0">
+                  <div className={`text-xs leading-snug line-clamp-2 group-hover:text-tp-blue transition-colors ${text}`}>{a.title}</div>
+                  <div className={`text-[10px] mt-0.5 ${sub}`}>{a.publisher}{a.time ? ` · ${relTime(a.time)}` : ''}</div>
+                </div>
+                <ExternalLink size={11} className={`shrink-0 mt-0.5 ${sub} group-hover:text-tp-blue transition-colors`} />
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Saved Analysis Card ──────────────────────────────────────────────────────
 function AnalysisCard({ analysis, onDelete, dark }) {
   const [expanded, setExpanded] = useState(false)
@@ -237,7 +306,12 @@ function AnalysisCard({ analysis, onDelete, dark }) {
       {expanded && (
         <div className={`px-4 pb-4 border-t ${dark ? 'border-tp-border' : 'border-tp-border-l'}`}>
           <div className="pt-3">
-            {parsed ? <AnalysisView data={parsed} dark={dark} /> : (
+            {parsed ? (
+              <>
+                <AnalysisView data={parsed} dark={dark} />
+                <NewsSection positionen={parsed.positionen} dark={dark} />
+              </>
+            ) : (
               <div className={`text-sm leading-relaxed whitespace-pre-wrap ${sub}`}>{analysis.analysis_result}</div>
             )}
           </div>
