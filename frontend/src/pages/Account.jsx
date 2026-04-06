@@ -1,12 +1,24 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LogOut, Moon, Sun, User } from 'lucide-react'
+import { LogOut, Moon, Sun, User, Sparkles } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+
+const CONSENT_KEY = 'tp_portfolio_consent'
 
 export default function Account() {
   const { user, signOut } = useAuth()
   const { dark, toggle }  = useTheme()
   const navigate = useNavigate()
+  const [portfolioConsent, setPortfolioConsent] = useState(
+    () => localStorage.getItem(CONSENT_KEY) === 'true'
+  )
+
+  const toggleConsent = () => {
+    const next = !portfolioConsent
+    localStorage.setItem(CONSENT_KEY, String(next))
+    setPortfolioConsent(next)
+  }
 
   const text  = dark ? 'text-tp-text'  : 'text-tp-text-l'
   const sub   = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
@@ -62,6 +74,19 @@ export default function Account() {
             {dark ? 'Dark Mode' : 'Light Mode'}
           </span>
           <span className="text-tp-sub text-xs">{dark ? 'An' : 'Aus'}</span>
+        </button>
+        <div className={`border-t ${dark ? 'border-tp-border' : 'border-tp-border-l'}`} />
+        <button
+          onClick={toggleConsent}
+          className={`w-full flex items-center justify-between px-5 py-4 text-sm transition-colors ${row}`}
+        >
+          <span className={`flex items-center gap-3 font-medium ${text}`}>
+            <Sparkles size={16} />
+            Portfolio-Analyse (KI)
+          </span>
+          <span className={`text-xs ${portfolioConsent ? 'text-tp-green' : 'text-tp-sub'}`}>
+            {portfolioConsent ? 'Eingewilligt' : 'Nicht eingewilligt'}
+          </span>
         </button>
         <div className={`border-t ${dark ? 'border-tp-border' : 'border-tp-border-l'}`} />
         <button

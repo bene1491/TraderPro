@@ -13,6 +13,7 @@ import Watchlist  from './pages/Watchlist'
 import Auth       from './pages/Auth'
 import Account    from './pages/Account'
 import Calculator from './pages/Calculator'
+import Portfolio  from './pages/Portfolio'
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/asset/:symbol" element={<Asset />} />
         <Route path="/watchlist"    element={<Watchlist />} />
         <Route path="/calculator"   element={<Calculator />} />
+        <Route path="/portfolio"    element={<Portfolio />} />
         <Route path="/auth"         element={<Auth />} />
         <Route path="/account"      element={<Account />} />
         <Route path="*"             element={<Navigate to="/" replace />} />

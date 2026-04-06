@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom'
-import { Home, Star, Calculator, User } from 'lucide-react'
+import { Home, Star, Calculator, User, PieChart } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 
 const NAV = [
   { to: '/',            icon: Home,       label: 'Entdecken' },
   { to: '/watchlist',   icon: Star,       label: 'Watchlist' },
   { to: '/calculator',  icon: Calculator, label: 'Rechner'   },
+  { to: '/portfolio',   icon: PieChart,   label: 'Portfolio' },
   { to: '/account',     icon: User,       label: 'Konto'     },
 ]
 

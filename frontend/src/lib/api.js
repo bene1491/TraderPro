@@ -24,8 +24,32 @@ export function pingBackend() {
 }
 
 export const api = {
-  search:  (q)              => request(`/api/search?q=${encodeURIComponent(q)}`),
-  quote:   (symbol)         => request(`/api/quote/${symbol}`),
-  history: (symbol, period) => request(`/api/history/${symbol}?period=${period}`),
-  news:    (symbol)         => request(`/api/news/${symbol}`),
+  search:   (q)              => request(`/api/search?q=${encodeURIComponent(q)}`),
+  quote:    (symbol)         => request(`/api/quote/${symbol}`),
+  history:  (symbol, period) => request(`/api/history/${symbol}?period=${period}`),
+  news:     (symbol)         => request(`/api/news/${symbol}`),
+  analyzePortfolio: async (images, investmentStyle) => {
+    const formData = new FormData()
+    images.forEach(img => formData.append('images', img))
+    formData.append('investment_style', investmentStyle || '')
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 60000) // 60s for AI
+    try {
+      const res = await fetch(`${BASE}/api/portfolio/analyze`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail ?? `HTTP ${res.status}`)
+      }
+      return res.json()
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error('Analyse-Timeout – bitte erneut versuchen.')
+      throw err
+    } finally {
+      clearTimeout(timer)
+    }
+  },
 }
