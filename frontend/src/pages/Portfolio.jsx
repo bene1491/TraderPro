@@ -247,11 +247,10 @@ function AddPositionSheet({ onClose, onAdd, dark }) {
 // ── Performance Chart ─────────────────────────────────────────────────────────
 const PERIODS = ['1D', '1W', '1M', '1Y', '5Y']
 
-function PortfolioPerformanceChart({ positions, totalValue, totalGain, totalGainPct, dark }) {
+function PortfolioPerformanceChart({ positions, dark }) {
   const [period,       setPeriod]       = useState('1M')
   const [chartData,    setChartData]    = useState([])
   const [chartLoading, setChartLoading] = useState(false)
-  const [periodChange, setPeriodChange] = useState(null)
 
   const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
   const sub  = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
@@ -263,23 +262,25 @@ function PortfolioPerformanceChart({ positions, totalValue, totalGain, totalGain
     if (!posKey) { setChartData([]); return }
     setChartLoading(true)
     api.portfolioChart(positions, period)
-      .then(res => {
-        const data = res.data || []
-        setChartData(data)
-        if (data.length >= 2) {
-          const first = data[0].value
-          const last  = data[data.length - 1].value
-          setPeriodChange({ value: last - first, pct: (last - first) / first * 100 })
-        } else {
-          setPeriodChange(null)
-        }
-      })
-      .catch(() => { setChartData([]); setPeriodChange(null) })
+      .then(res => setChartData(res.data || []))
+      .catch(() => setChartData([]))
       .finally(() => setChartLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posKey, period])
 
-  const isUp      = periodChange ? periodChange.value >= 0 : (totalGain != null ? totalGain >= 0 : true)
+  // Derive all values from chart data — no race condition with batch quotes
+  const currentValue = chartData.length > 0 ? chartData[chartData.length - 1].value : null
+  const firstValue   = chartData.length > 0 ? chartData[0].value : null
+  const periodChange = currentValue != null && firstValue != null && firstValue > 0
+    ? { value: currentValue - firstValue, pct: (currentValue - firstValue) / firstValue * 100 }
+    : null
+
+  // All-time gain vs cost basis (requires avg_price on positions)
+  const costBasis   = positions.reduce((s, p) => p.avg_price ? s + p.quantity * p.avg_price : s, 0)
+  const allTimeGain = currentValue != null && costBasis > 0 ? currentValue - costBasis : null
+  const allTimeGainPct = allTimeGain != null && costBasis > 0 ? allTimeGain / costBasis * 100 : null
+
+  const isUp      = periodChange ? periodChange.value >= 0 : (allTimeGain != null ? allTimeGain >= 0 : true)
   const lineColor = isUp ? '#00b15d' : '#ef4444'
   const gradId    = isUp ? 'pgUp' : 'pgDown'
 
@@ -288,18 +289,21 @@ function PortfolioPerformanceChart({ positions, totalValue, totalGain, totalGain
       {/* Value header */}
       <div className="px-5 pt-5 pb-2">
         <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${sub}`}>Gesamtwert</div>
-        <div className={`text-4xl font-bold tracking-tight ${text}`}>
-          {totalValue > 0
-            ? `$${totalValue.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-            : <span className={sub}>—</span>
-          }
-        </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5">
-          {totalGain != null && (
-            <span className={`text-sm font-semibold ${totalGain >= 0 ? 'text-tp-green' : 'text-tp-red'}`}>
-              {totalGain >= 0 ? '+' : ''}
-              {totalGain.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              &nbsp;({fmtPct(totalGainPct)})
+        {chartLoading && currentValue == null
+          ? <div className={`h-10 w-44 rounded-xl animate-pulse mt-1 ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`} />
+          : <div className={`text-4xl font-bold tracking-tight ${text}`}>
+              {currentValue != null
+                ? `$${currentValue.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : <span className={sub}>—</span>
+              }
+            </div>
+        }
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 min-h-[20px]">
+          {allTimeGain != null && (
+            <span className={`text-sm font-semibold ${allTimeGain >= 0 ? 'text-tp-green' : 'text-tp-red'}`}>
+              {allTimeGain >= 0 ? '+' : ''}
+              {allTimeGain.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              &nbsp;({fmtPct(allTimeGainPct)}) gesamt
             </span>
           )}
           {periodChange && (
@@ -313,8 +317,11 @@ function PortfolioPerformanceChart({ positions, totalValue, totalGain, totalGain
       {/* Chart area */}
       <div style={{ height: 190 }} className="mt-2">
         {chartLoading ? (
-          <div className="h-full flex items-center justify-center">
-            <div className="w-5 h-5 rounded-full border-2 border-tp-blue border-t-transparent animate-spin" />
+          <div className="h-full flex items-end px-0 pb-0 gap-0.5">
+            {Array.from({ length: 28 }).map((_, i) => (
+              <div key={i} className={`flex-1 rounded-t-sm animate-pulse ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`}
+                style={{ height: `${30 + Math.sin(i * 0.6) * 20 + Math.random() * 25}%`, animationDelay: `${i * 30}ms` }} />
+            ))}
           </div>
         ) : chartData.length > 1 ? (
           <ResponsiveContainer width="100%" height="100%">
@@ -466,9 +473,6 @@ export default function Portfolio() {
   }))
 
   const totalValue   = positionsWithData.reduce((s, p) => s + (p.currentValue ?? 0), 0)
-  const totalCost    = positionsWithData.reduce((s, p) => s + (p.costBasis ?? 0), 0)
-  const totalGain    = totalCost > 0 ? totalValue - totalCost : null
-  const totalGainPct = totalGain != null && totalCost > 0 ? (totalGain / totalCost) * 100 : null
 
   const allocData = positionsWithData
     .filter(p => p.currentValue != null && p.currentValue > 0)
@@ -510,13 +514,7 @@ export default function Portfolio() {
 
         {/* Performance chart — shown when there are positions */}
         {positions.length > 0 && (
-          <PortfolioPerformanceChart
-            positions={positions}
-            totalValue={totalValue}
-            totalGain={totalGain}
-            totalGainPct={totalGainPct}
-            dark={dark}
-          />
+          <PortfolioPerformanceChart positions={positions} dark={dark} />
         )}
 
         {/* Allocation donut — only when ≥ 2 positions with prices */}

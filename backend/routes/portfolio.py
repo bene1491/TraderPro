@@ -184,14 +184,13 @@ async def portfolio_chart(
     period: str    = Query("1M"),
 ):
     """
-    Simulated portfolio value history.
+    Simulated portfolio value history — fetches all symbols in parallel.
     positions = "AAPL:5,BTC-USD:0.003,MSFT:10"
-    Returns [{date, value}] — value is sum of (quantity × close_price) per date.
+    Returns [{date, value}]
     """
     import yfinance as yf
     import pandas as pd
 
-    # Parse positions string
     pos_map: dict[str, float] = {}
     for item in positions.split(","):
         item = item.strip()
@@ -207,41 +206,50 @@ async def portfolio_chart(
         raise HTTPException(status_code=400, detail="Keine gültigen Positionen angegeben")
 
     yf_period, yf_interval = _CHART_PERIOD_MAP.get(period.upper(), ("1mo", "1d"))
+    loop = asyncio.get_event_loop()
 
-    def _fetch():
-        series_list = []
-        for sym, qty in pos_map.items():
+    # ── Fetch all symbols in parallel (key fix for speed) ──────────────────
+    async def _fetch_one(sym: str, qty: float):
+        def _inner():
             try:
-                hist = yf.Ticker(sym).history(period=yf_period, interval=yf_interval, auto_adjust=True)
+                hist = yf.Ticker(sym).history(
+                    period=yf_period, interval=yf_interval, auto_adjust=True
+                )
                 if hist.empty:
-                    continue
+                    return None
                 close = hist["Close"].dropna()
-                # Normalise timezone so concat works
                 if close.index.tzinfo is not None:
                     close.index = close.index.tz_convert("UTC").tz_localize(None)
-                series_list.append((close * qty).rename(sym))
+                return (close * qty).rename(sym)
             except Exception:
-                continue
+                return None
+        return await loop.run_in_executor(None, _inner)
 
-        if not series_list:
-            return []
-
-        df = pd.concat(series_list, axis=1).ffill().dropna(how="all")
-        portfolio = df.sum(axis=1)
-
-        result = []
-        for ts, val in portfolio.items():
-            if pd.isna(val):
-                continue
-            result.append({
-                "date":  ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
-                "value": round(float(val), 2),
-            })
-        return result
-
-    loop = asyncio.get_event_loop()
     try:
-        data = await loop.run_in_executor(None, _fetch)
-        return {"data": data, "period": period.upper()}
+        raw_series = await asyncio.gather(
+            *[_fetch_one(sym, qty) for sym, qty in pos_map.items()]
+        )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Chart-Daten konnten nicht geladen werden: {e}")
+
+    series_list = [s for s in raw_series if s is not None]
+    if not series_list:
+        return {"data": [], "period": period.upper()}
+
+    # ── Combine & fix NaN (key fix for -100% bug) ──────────────────────────
+    # ffill+bfill ensures no NaN so sum() is always a full portfolio value,
+    # not a partial one that makes early data points look much lower/higher.
+    df        = pd.concat(series_list, axis=1).sort_index().ffill().bfill()
+    portfolio = df.sum(axis=1)          # no NaN left, sum is always complete
+    portfolio = portfolio[portfolio > 0]  # drop any remaining zeros
+
+    data = [
+        {
+            "date":  ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+            "value": round(float(val), 2),
+        }
+        for ts, val in portfolio.items()
+        if not pd.isna(val)
+    ]
+
+    return {"data": data, "period": period.upper()}
