@@ -1,5 +1,4 @@
 import re
-import json
 import asyncio
 import datetime
 import xml.etree.ElementTree as ET
@@ -25,24 +24,20 @@ GURUS = [
     {"slug": "soros",         "name": "George Soros",          "fund": "Soros Fund Management",  "cik": "0001029160", "initials": "GS", "color": "#06b6d4", "description": "Macro-Investor"},
 ]
 
-# Cache: cik -> (data, timestamp)
 _cache: dict = {}
 _CACHE_TTL = datetime.timedelta(hours=6)
 
 
 def _get_13f_filings(cik: str) -> list[dict]:
-    """Return list of 13F-HR accession numbers + dates for a CIK, newest first."""
     cik_padded = cik.lstrip("0").zfill(10)
     url = f"https://data.sec.gov/submissions/CIK{cik_padded}.json"
     resp = http.get(url, headers=EDGAR_HEADERS, timeout=15)
     resp.raise_for_status()
     data = resp.json()
-
-    recent = data.get("filings", {}).get("recent", {})
+    recent  = data.get("filings", {}).get("recent", {})
     forms   = recent.get("form", [])
     accnums = recent.get("accessionNumber", [])
     dates   = recent.get("filingDate", [])
-
     filings = []
     for form, accnum, date in zip(forms, accnums, dates):
         if form in ("13F-HR", "13F-HR/A"):
@@ -50,64 +45,92 @@ def _get_13f_filings(cik: str) -> list[dict]:
     return filings
 
 
-def _fetch_infotable_xml(cik: str, accnum: str) -> str:
-    """Download the information table XML for a given 13F accession number."""
-    cik_clean   = cik.lstrip("0")
-    accnum_dash = accnum  # e.g. "0001067983-24-000013"
-    accnum_nd   = accnum.replace("-", "")  # no dashes
+def _candidate_ciks(company_cik: str, accnum: str) -> list[str]:
+    """
+    The archive path uses the FILER's CIK (first 10 digits of accession number),
+    which often differs from the company's own CIK (e.g. Berkshire files via Donnelley).
+    Try filer CIK first, then fall back to company CIK.
+    """
+    accnum_nd  = accnum.replace("-", "")
+    filer_cik  = str(int(accnum_nd[:10]))   # strip leading zeros
+    company    = company_cik.lstrip("0")
+    seen, out  = set(), []
+    for c in [filer_cik, company]:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
 
-    # 1. Try the filing index JSON to find the exact filename
-    idx_url = (
-        f"https://www.sec.gov/Archives/edgar/data/{cik_clean}"
-        f"/{accnum_nd}/{accnum_dash}-index.json"
-    )
-    try:
-        idx_resp = http.get(idx_url, headers=EDGAR_HEADERS, timeout=10)
-        if idx_resp.ok:
-            for doc in idx_resp.json().get("documents", []):
-                dtype = doc.get("type", "").upper()
-                dname = doc.get("document", "").lower()
-                if "information table" in dtype or "infotable" in dname or (dname.endswith(".xml") and "primary" not in dtype.lower()):
-                    doc_url = (
-                        f"https://www.sec.gov/Archives/edgar/data/{cik_clean}"
-                        f"/{accnum_nd}/{doc['document']}"
-                    )
-                    xml_resp = http.get(doc_url, headers={**EDGAR_HEADERS, "Accept": "*/*"}, timeout=20)
-                    if xml_resp.ok and "<" in xml_resp.text:
-                        return xml_resp.text
-    except Exception:
-        pass
 
-    # 2. Fallback: try common filenames
-    for fname in ["infotable.xml", "informationtable.xml", "form13fInfoTable.xml", "13fInfoTable.xml"]:
-        url = f"https://www.sec.gov/Archives/edgar/data/{cik_clean}/{accnum_nd}/{fname}"
+def _fetch_infotable_xml(company_cik: str, accnum: str) -> str:
+    accnum_nd = accnum.replace("-", "")
+
+    for path_cik in _candidate_ciks(company_cik, accnum):
+        # 1. Try the EDGAR index JSON to locate the exact filename
+        idx_url = (
+            f"https://www.sec.gov/Archives/edgar/data/{path_cik}"
+            f"/{accnum_nd}/{accnum}-index.json"
+        )
         try:
-            r = http.get(url, headers={**EDGAR_HEADERS, "Accept": "*/*"}, timeout=10)
-            if r.ok and "<" in r.text:
-                return r.text
+            idx_resp = http.get(idx_url, headers=EDGAR_HEADERS, timeout=10)
+            if idx_resp.ok:
+                docs = idx_resp.json().get("documents", [])
+                for doc in docs:
+                    dtype = doc.get("type", "").upper()
+                    dname = doc.get("document", "").lower()
+                    if "information table" in dtype or "infotable" in dname or (
+                        dname.endswith(".xml") and "primary" not in dtype.lower()
+                        and "13f-hr" not in dtype.lower()
+                    ):
+                        doc_url = (
+                            f"https://www.sec.gov/Archives/edgar/data/{path_cik}"
+                            f"/{accnum_nd}/{doc['document']}"
+                        )
+                        r = http.get(doc_url, headers={**EDGAR_HEADERS, "Accept": "*/*"}, timeout=20)
+                        if r.ok and "<" in r.text:
+                            return r.text
         except Exception:
-            continue
+            pass
+
+        # 2. Fallback: probe common filenames
+        for fname in ["infotable.xml", "informationtable.xml", "form13fInfoTable.xml",
+                      "13fInfoTable.xml", "primarydocument.xml"]:
+            url = (
+                f"https://www.sec.gov/Archives/edgar/data/{path_cik}"
+                f"/{accnum_nd}/{fname}"
+            )
+            try:
+                r = http.get(url, headers={**EDGAR_HEADERS, "Accept": "*/*"}, timeout=10)
+                if r.ok and "<infoTable" in r.text:
+                    return r.text
+            except Exception:
+                continue
 
     raise ValueError(f"Infotable XML nicht gefunden für {accnum}")
 
 
+def _strip_namespaces(xml_text: str) -> str:
+    """Remove XML namespace declarations and prefixes so ET can parse cleanly."""
+    # Strip BOM / leading whitespace
+    text = xml_text.lstrip("\ufeff\r\n\t ")
+    # Remove namespace declarations:  xmlns="..." or xmlns:ns="..."
+    text = re.sub(r'\s+xmlns(?::[a-zA-Z0-9_-]+)?="[^"]*"', "", text)
+    # Remove namespace prefixes from tags: <ns:tag  →  <tag  and </ns:tag  →  </tag
+    text = re.sub(r"<(/?)(?:[a-zA-Z0-9_-]+:)([a-zA-Z0-9_][a-zA-Z0-9_.-]*)", r"<\1\2", text)
+    return text
+
+
 def _parse_infotable(xml_text: str) -> list[dict]:
-    """Parse 13F infotable XML into holdings list."""
-    # Strip XML namespaces for simpler parsing
-    cleaned = re.sub(r'\s+xmlns(?::[^=]+)?="[^"]*"', "", xml_text)
-    cleaned = re.sub(r"<([a-zA-Z]+):[a-zA-Z]", lambda m: "<", cleaned)  # strip ns prefixes conservatively
-    cleaned = re.sub(r"</[a-zA-Z]+:", "</", cleaned)
+    cleaned = _strip_namespaces(xml_text)
 
     try:
         root = ET.fromstring(cleaned)
     except ET.ParseError:
-        # Try stripping everything before <informationTable
-        m = re.search(r"<informationTable", xml_text, re.IGNORECASE)
+        # Last resort: find the first <informationTable ...> and parse from there
+        m = re.search(r"<informationTable", cleaned, re.IGNORECASE)
         if not m:
-            raise ValueError("Kein <informationTable> gefunden")
-        sub = xml_text[m.start():]
-        sub = re.sub(r'\s+xmlns(?::[^=]+)?="[^"]*"', "", sub)
-        root = ET.fromstring(sub)
+            raise ValueError("Kein <informationTable> in der XML-Datei gefunden")
+        root = ET.fromstring(_strip_namespaces(cleaned[m.start():]))
 
     holdings = []
     for entry in root.iter("infoTable"):
@@ -133,24 +156,22 @@ def _parse_infotable(xml_text: str) -> list[dict]:
 
 
 def _map_tickers(holdings: list[dict]) -> list[dict]:
-    """Batch-map CUSIPs → tickers via OpenFIGI (free, no key needed, 25/req)."""
-    top = holdings[:50]
+    top    = holdings[:50]
     cusips = [h["cusip"] for h in top]
     ticker_map: dict[str, str] = {}
 
     for i in range(0, len(cusips), 25):
-        batch = cusips[i : i + 25]
+        batch = cusips[i: i + 25]
         try:
             payload = [{"idType": "ID_CUSIP", "idValue": c} for c in batch]
-            resp = http.post(OPENFIGI_URL, json=payload,
-                             headers={"Content-Type": "application/json"}, timeout=15)
+            resp    = http.post(OPENFIGI_URL, json=payload,
+                                headers={"Content-Type": "application/json"}, timeout=15)
             if not resp.ok:
                 continue
             for cusip, result in zip(batch, resp.json()):
                 items = result.get("data", [])
                 if not items:
                     continue
-                # Prefer US-listed equity
                 for item in items:
                     if item.get("exchCode") in ("US", "UN", "UA", "UQ", "UM", "UW"):
                         ticker_map[cusip] = item.get("ticker", "")
@@ -166,7 +187,6 @@ def _map_tickers(holdings: list[dict]) -> list[dict]:
 
 
 def _add_changes(current: list[dict], previous: list[dict]) -> list[dict]:
-    """Annotate each holding with change vs previous quarter."""
     prev_map = {h["cusip"]: h for h in previous}
     for h in current:
         prev = prev_map.get(h["cusip"])
@@ -176,12 +196,7 @@ def _add_changes(current: list[dict], previous: list[dict]) -> list[dict]:
         else:
             diff = h["shares"] - prev["shares"]
             pct  = round(diff / prev["shares"] * 100, 1) if prev["shares"] else 0
-            if abs(pct) < 1:
-                h["change"] = "unchanged"
-            elif diff > 0:
-                h["change"] = "increased"
-            else:
-                h["change"] = "decreased"
+            h["change"]      = "unchanged" if abs(pct) < 1 else ("increased" if diff > 0 else "decreased")
             h["shares_diff"] = pct
     return current
 
@@ -211,7 +226,6 @@ def _fetch_holdings(guru: dict) -> dict:
     for h in holdings:
         h["pct"] = round(h["value"] / total * 100, 2) if total else 0
 
-    # Return top 25 with a ticker; fallback to top 25 without filter
     with_ticker = [h for h in holdings if h.get("ticker")][:25]
     result      = with_ticker if len(with_ticker) >= 5 else holdings[:25]
 
@@ -222,8 +236,6 @@ def _fetch_holdings(guru: dict) -> dict:
         "holdings":    result,
     }
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/gurus")
 async def get_gurus():

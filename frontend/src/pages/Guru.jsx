@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Minus, Sparkles, ArrowUpRight } from 'lucide-react'
+import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, ArrowUpRight, Wrench, AlertTriangle, Sparkles } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
@@ -183,8 +183,18 @@ export default function Guru() {
   return (
     <div className="space-y-5">
       <div className="pt-2">
-        <h1 className={`text-2xl font-bold tracking-tight ${text}`}>Guru Tracker</h1>
+        <div className="flex items-center gap-2">
+          <h1 className={`text-2xl font-bold tracking-tight ${text}`}>Guru Tracker</h1>
+          <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-500">
+            <Wrench size={9} /> BETA
+          </span>
+        </div>
         <p className={`text-sm mt-0.5 ${sub}`}>Was kaufen Top-Investoren laut SEC 13F-Filings?</p>
+      </div>
+
+      <div className={`rounded-2xl px-4 py-3 flex gap-2 text-xs ${dark ? 'bg-yellow-500/10 text-yellow-300' : 'bg-yellow-50 text-yellow-700'}`}>
+        <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+        <span>Dieses Feature befindet sich noch in Entwicklung. Fehler beim Laden sind möglich.</span>
       </div>
 
       <div className={`rounded-2xl px-4 py-3 text-xs flex gap-2 ${dark ? 'bg-tp-border/60 text-tp-sub' : 'bg-tp-border-l text-tp-sub-l'}`}>

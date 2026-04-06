@@ -1,515 +1,503 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { Upload, X, Sparkles, Save, Trash2, ChevronDown, ChevronUp, AlertTriangle, LogIn, TrendingUp, AlertCircle, CheckCircle, Target, Newspaper, ExternalLink } from 'lucide-react'
+import {
+  Plus, Trash2, Search, X, ChevronRight, Sparkles,
+  TrendingUp, TrendingDown, Wrench, AlertTriangle, Loader2,
+} from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { usePortfolioAnalyses } from '../hooks/usePortfolioAnalyses'
+import { usePortfolioPositions } from '../hooks/usePortfolioPositions'
 import { api } from '../lib/api'
-
-const CONSENT_KEY = 'tp_portfolio_consent'
+import AssetLogo from '../components/AssetLogo'
 
 const COLORS = ['#3b82f6','#00b15d','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#14b8a6']
 
-function fmt(n) {
-  if (n == null) return '—'
-  return new Intl.NumberFormat('de', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 }).format(n)
+function fmtCurrency(n, currency = 'USD') {
+  if (n == null || isNaN(n)) return '—'
+  return new Intl.NumberFormat('de', {
+    style: 'currency', currency,
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(n)
+}
+function fmtPct(n) {
+  if (n == null || isNaN(n)) return ''
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
 }
 
-// ── Structured Analysis View ─────────────────────────────────────────────────
-function AnalysisView({ data, dark }) {
-  const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
-  const sub  = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
-  const card = dark ? 'bg-tp-card border-tp-border' : 'bg-tp-card-l border-tp-border-l'
-  const div  = dark ? 'border-tp-border' : 'border-tp-border-l'
-
-  const chartData = (data.positionen || [])
-    .filter(p => p.anteil > 0)
-    .slice(0, 10)
-
-  const bewertungColor = {
-    'sehr gut': 'text-tp-green', 'gut': 'text-tp-green', 'solide': 'text-tp-blue',
-    'ausgewogen': 'text-tp-blue', 'einseitig': 'text-yellow-400', 'risikobehaftet': 'text-tp-red',
-  }[data.bewertung] ?? 'text-tp-blue'
-
-  return (
-    <div className="space-y-4">
-
-      {/* Header card */}
-      <div className={`rounded-3xl border p-5 space-y-1 ${card}`}>
-        <div className={`text-xs font-medium ${sub}`}>Gesamtwert</div>
-        <div className={`text-3xl font-bold tracking-tight ${text}`}>{fmt(data.gesamtwert)}</div>
-        {data.bewertung && (
-          <div className={`text-sm font-semibold capitalize ${bewertungColor}`}>{data.bewertung}</div>
-        )}
-        {data.bewertung_kurz && (
-          <div className={`text-sm ${sub} pt-1`}>{data.bewertung_kurz}</div>
-        )}
-      </div>
-
-      {/* Donut chart + positionen */}
-      {chartData.length > 0 && (
-        <div className={`rounded-3xl border p-5 ${card}`}>
-          <div className={`text-sm font-semibold mb-4 ${text}`}>Aufteilung</div>
-          <div className="flex gap-4 items-center">
-            <div style={{ width: 120, height: 120, flexShrink: 0 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={chartData} dataKey="anteil" cx="50%" cy="50%" innerRadius={30} outerRadius={55} strokeWidth={0}>
-                    {chartData.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v) => `${v.toFixed(1)}%`} contentStyle={{ background: dark ? '#1c1c1e' : '#fff', border: 'none', borderRadius: 12, fontSize: 11 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex-1 space-y-1.5 min-w-0">
-              {chartData.map((p, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                  <div className={`text-xs truncate flex-1 ${sub}`}>{p.name}</div>
-                  <div className={`text-xs font-semibold shrink-0 ${text}`}>{p.anteil.toFixed(1)}%</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Klassen */}
-      {data.klassen?.length > 0 && (
-        <div className={`rounded-3xl border p-5 ${card}`}>
-          <div className={`text-sm font-semibold mb-3 ${text}`}>Anlageklassen</div>
-          <div className="space-y-2.5">
-            {data.klassen.map((k, i) => (
-              <div key={i}>
-                <div className="flex justify-between mb-1">
-                  <span className={`text-xs ${sub}`}>{k.name}</span>
-                  <span className={`text-xs font-semibold ${text}`}>{k.anteil.toFixed(1)}%</span>
-                </div>
-                <div className={`h-1.5 rounded-full overflow-hidden ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`}>
-                  <div className="h-full rounded-full" style={{ width: `${Math.min(k.anteil, 100)}%`, background: COLORS[i % COLORS.length] }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Stärken */}
-      {data.staerken?.length > 0 && (
-        <div className={`rounded-3xl border p-5 ${card}`}>
-          <div className={`flex items-center gap-2 text-sm font-semibold mb-3 ${text}`}>
-            <CheckCircle size={16} className="text-tp-green" /> Stärken
-          </div>
-          <div className="space-y-2">
-            {data.staerken.map((s, i) => (
-              <div key={i} className={`text-sm ${sub} flex gap-2`}>
-                <span className="text-tp-green mt-0.5 shrink-0">✓</span>{s}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Redundanzen */}
-      {data.redundanzen?.length > 0 && (
-        <div className={`rounded-3xl border p-5 ${card}`}>
-          <div className={`flex items-center gap-2 text-sm font-semibold mb-3 ${text}`}>
-            <AlertCircle size={16} className="text-yellow-400" /> Redundanzen
-          </div>
-          <div className="space-y-3">
-            {data.redundanzen.map((r, i) => (
-              <div key={i} className={`pb-3 ${i < data.redundanzen.length - 1 ? `border-b ${div}` : ''}`}>
-                <div className={`text-sm font-medium ${text}`}>{r.titel}</div>
-                {r.ueberlappung != null && (
-                  <div className="text-xs text-yellow-400 font-semibold mt-0.5">~{r.ueberlappung}% Überschneidung</div>
-                )}
-                <div className={`text-xs mt-1 ${sub}`}>{r.beschreibung}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Optimierungen */}
-      {data.optimierungen?.length > 0 && (
-        <div className={`rounded-3xl border p-5 ${card}`}>
-          <div className={`flex items-center gap-2 text-sm font-semibold mb-3 ${text}`}>
-            <Target size={16} className="text-tp-blue" /> Optimierungspotenziale
-          </div>
-          <div className="space-y-2">
-            {data.optimierungen.map((o, i) => (
-              <div key={i} className={`text-sm ${sub} flex gap-2`}>
-                <span className="text-tp-blue mt-0.5 shrink-0">→</span>{o}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Fazit */}
-      {data.fazit && (
-        <div className={`rounded-3xl border p-5 ${card}`}>
-          <div className={`flex items-center gap-2 text-sm font-semibold mb-2 ${text}`}>
-            <TrendingUp size={16} className="text-tp-blue" /> Fazit
-          </div>
-          <div className={`text-sm leading-relaxed ${sub}`}>{data.fazit}</div>
-        </div>
-      )}
-    </div>
-  )
+// ── Add-Position Sheet ────────────────────────────────────────────────────────
+function useDebounce(value, delay) {
+  const [d, setD] = useState(value)
+  useEffect(() => { const t = setTimeout(() => setD(value), delay); return () => clearTimeout(t) }, [value, delay])
+  return d
 }
 
-// ── Consent Modal ────────────────────────────────────────────────────────────
-function ConsentModal({ onAccept, onDecline, dark }) {
-  const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
-  const sub  = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
-  const card = dark ? 'bg-tp-card border-tp-border' : 'bg-tp-card-l border-tp-border-l'
+const TYPE_LABEL = { EQUITY: 'Aktie', ETF: 'ETF', CRYPTOCURRENCY: 'Krypto', FUTURE: 'Rohstoff', INDEX: 'Index', CURRENCY: 'Währung' }
+const TYPE_COLOR = { EQUITY: 'text-blue-400', ETF: 'text-purple-400', CRYPTOCURRENCY: 'text-yellow-400', FUTURE: 'text-orange-400' }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-md" />
-      <div className={`relative w-full max-w-md rounded-3xl border p-6 space-y-4 ${card}`}>
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-tp-blue/15 flex items-center justify-center">
-            <Sparkles size={20} className="text-tp-blue" />
-          </div>
-          <h2 className={`text-lg font-bold ${text}`}>KI-Portfolio-Analyse</h2>
-        </div>
-        <p className={`text-sm leading-relaxed ${sub}`}>
-          Um dein Portfolio zu analysieren, werden die von dir hochgeladenen Screenshots an die
-          <strong className={text}> Groq AI API</strong> übermittelt. Die Bilder werden
-          <strong className={text}> nicht dauerhaft gespeichert</strong> und dienen ausschließlich der einmaligen Analyse.
-        </p>
-        <div className={`rounded-2xl p-3 text-xs space-y-1 ${dark ? 'bg-yellow-500/10 text-yellow-300' : 'bg-yellow-50 text-yellow-700'}`}>
-          <div className="flex items-center gap-2 font-semibold">
-            <AlertTriangle size={14} /> Hinweis
-          </div>
-          <p>Stelle sicher, dass auf deinen Screenshots <strong>kein Name, keine Kontonummer und keine Depot-ID</strong> sichtbar sind.</p>
-        </div>
-        <p className={`text-xs ${sub} opacity-70`}>
-          Diese Einwilligung kann jederzeit unter <strong>Konto → Portfolio-Analyse</strong> widerrufen werden.
-        </p>
-        <div className="flex gap-3 pt-1">
-          <button onClick={onDecline} className={`flex-1 py-3 rounded-2xl border text-sm font-medium transition-colors ${dark ? 'border-tp-border text-tp-sub' : 'border-tp-border-l text-tp-sub-l'}`}>
-            Ablehnen
-          </button>
-          <button onClick={onAccept} className="flex-1 py-3 rounded-2xl bg-tp-blue text-white text-sm font-semibold hover:opacity-90 transition-opacity">
-            Einwilligen & starten
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── News Section ─────────────────────────────────────────────────────────────
-function NewsSection({ positionen, dark }) {
-  const [news, setNews]       = useState(null)  // null = loading, {} = done
-  const [error, setError]     = useState(false)
-  const sub  = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
-  const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
-  const div  = dark ? 'border-tp-border' : 'border-tp-border-l'
-
-  useEffect(() => {
-    const symbols = [...new Set(
-      (positionen || []).map(p => p.symbol).filter(Boolean)
-    )].slice(0, 8)
-    if (!symbols.length) { setNews({}); return }
-
-    api.portfolioNews(symbols)
-      .then(d => setNews(d.news || {}))
-      .catch(() => setError(true))
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Map symbol → position name for display
-  const nameOf = (sym) =>
-    (positionen || []).find(p => p.symbol === sym)?.name || sym
-
-  function relTime(t) {
-    if (!t) return ''
-    const ms = typeof t === 'number' ? t * 1000 : Date.parse(t)
-    if (!ms) return ''
-    const diff = Date.now() - ms
-    if (diff < 3600000) return `${Math.round(diff / 60000)}m`
-    if (diff < 86400000) return `${Math.round(diff / 3600000)}h`
-    return `${Math.round(diff / 86400000)}d`
-  }
-
-  if (error) return null
-  if (news === null) return (
-    <div className={`flex items-center gap-2 pt-3 text-xs ${sub}`}>
-      <div className="w-3 h-3 rounded-full border border-current border-t-transparent animate-spin" />
-      News werden geladen…
-    </div>
-  )
-  const entries = Object.entries(news).filter(([, articles]) => articles.length)
-  if (!entries.length) return null
-
-  return (
-    <div className={`pt-4 mt-4 border-t ${div} space-y-4`}>
-      <div className={`flex items-center gap-2 text-sm font-semibold ${text}`}>
-        <Newspaper size={14} /> Aktuelle News
-      </div>
-      {entries.map(([sym, articles]) => (
-        <div key={sym}>
-          <div className={`text-xs font-semibold mb-1.5 ${sub} uppercase tracking-wide`}>{nameOf(sym)}</div>
-          <div className="space-y-2">
-            {articles.map((a, i) => (
-              <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
-                className={`flex items-start justify-between gap-2 group`}>
-                <div className="min-w-0">
-                  <div className={`text-xs leading-snug line-clamp-2 group-hover:text-tp-blue transition-colors ${text}`}>{a.title}</div>
-                  <div className={`text-[10px] mt-0.5 ${sub}`}>{a.publisher}{a.time ? ` · ${relTime(a.time)}` : ''}</div>
-                </div>
-                <ExternalLink size={11} className={`shrink-0 mt-0.5 ${sub} group-hover:text-tp-blue transition-colors`} />
-              </a>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Saved Analysis Card ──────────────────────────────────────────────────────
-function AnalysisCard({ analysis, onDelete, dark }) {
-  const [expanded, setExpanded] = useState(false)
-  const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
-  const sub  = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
-  const card = dark ? 'bg-tp-card border-tp-border' : 'bg-tp-card-l border-tp-border-l'
-
-  const date = new Date(analysis.created_at).toLocaleDateString('de', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-  })
-
-  let parsed = null
-  try { parsed = typeof analysis.analysis_result === 'string' ? JSON.parse(analysis.analysis_result) : analysis.analysis_result } catch {}
-
-  return (
-    <div className={`rounded-2xl border overflow-hidden ${card}`}>
-      <button onClick={() => setExpanded(e => !e)} className="w-full flex items-center justify-between px-4 py-3 text-left">
-        <div>
-          <div className={`text-sm font-semibold ${text}`}>Analyse vom {date}</div>
-          {parsed?.bewertung && <div className="text-xs mt-0.5 text-tp-blue capitalize">{parsed.bewertung} · {fmt(parsed.gesamtwert)}</div>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={e => { e.stopPropagation(); onDelete(analysis.id) }} className="p-1.5 rounded-xl text-tp-red hover:bg-tp-red-bg transition-colors">
-            <Trash2 size={15} />
-          </button>
-          {expanded ? <ChevronUp size={16} className={sub} /> : <ChevronDown size={16} className={sub} />}
-        </div>
-      </button>
-      {expanded && (
-        <div className={`px-4 pb-4 border-t ${dark ? 'border-tp-border' : 'border-tp-border-l'}`}>
-          <div className="pt-3">
-            {parsed ? (
-              <>
-                <AnalysisView data={parsed} dark={dark} />
-                <NewsSection positionen={parsed.positionen} dark={dark} />
-              </>
-            ) : (
-              <div className={`text-sm leading-relaxed whitespace-pre-wrap ${sub}`}>{analysis.analysis_result}</div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Main Page ────────────────────────────────────────────────────────────────
-export default function Portfolio() {
-  const { dark } = useTheme()
-  const { user } = useAuth()
-  const navigate = useNavigate()
-  const toast    = useToast()
-  const { analyses, save, remove } = usePortfolioAnalyses()
+function AddPositionSheet({ onClose, onAdd, dark }) {
+  const [step,     setStep]     = useState('search')  // 'search' | 'form'
+  const [query,    setQuery]    = useState('')
+  const [results,  setResults]  = useState([])
+  const [loading,  setLoading]  = useState(false)
+  const [asset,    setAsset]    = useState(null)
+  const [quantity, setQuantity] = useState('')
+  const [avgPrice, setAvgPrice] = useState('')
+  const [saving,   setSaving]   = useState(false)
+  const inputRef  = useRef(null)
+  const qtyRef    = useRef(null)
+  const debounced = useDebounce(query, 280)
 
   const text  = dark ? 'text-tp-text'  : 'text-tp-text-l'
   const sub   = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
+  const bg    = dark ? 'bg-tp-bg'      : 'bg-tp-bg-l'
   const card  = dark ? 'bg-tp-card border-tp-border' : 'bg-tp-card-l border-tp-border-l'
   const input = dark
     ? 'bg-tp-border border-tp-border text-tp-text placeholder-tp-sub focus:border-tp-blue'
     : 'bg-tp-border-l border-tp-border-l text-tp-text-l placeholder-tp-sub-l focus:border-tp-blue'
 
-  const [consent, setConsent]         = useState(() => localStorage.getItem(CONSENT_KEY) === 'true')
-  const [showConsent, setShowConsent] = useState(false)
-  const [images, setImages]           = useState([])
-  const [previews, setPreviews]       = useState([])
-  const [style, setStyle]             = useState('')
-  const [loading, setLoading]         = useState(false)
-  const [result, setResult]           = useState(null)   // structured JSON or null
-  const [rawResult, setRawResult]     = useState(null)   // fallback text
-  const [saved, setSaved]             = useState(false)
-  const fileRef = useRef(null)
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80) }, [])
 
   useEffect(() => {
-    if (localStorage.getItem(CONSENT_KEY) === null) setShowConsent(true)
-  }, [])
+    if (!debounced.trim()) { setResults([]); return }
+    let cancelled = false
+    setLoading(true)
+    api.search(debounced)
+      .then(d => { if (!cancelled) setResults(d.results ?? []) })
+      .catch(() => { if (!cancelled) setResults([]) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [debounced])
 
-  const handleAccept = () => { localStorage.setItem(CONSENT_KEY, 'true'); setConsent(true); setShowConsent(false) }
-  const handleDecline = () => { localStorage.setItem(CONSENT_KEY, 'false'); setConsent(false); setShowConsent(false) }
-
-  const handleFiles = (files) => {
-    const valid = Array.from(files).filter(f => f.type.startsWith('image/'))
-    const toAdd = valid.slice(0, 5 - images.length)
-    setImages(prev => [...prev, ...toAdd])
-    toAdd.forEach(f => {
-      const reader = new FileReader()
-      reader.onload = e => setPreviews(prev => [...prev, e.target.result])
-      reader.readAsDataURL(f)
-    })
+  const selectAsset = (r) => {
+    setAsset(r)
+    setStep('form')
+    setTimeout(() => qtyRef.current?.focus(), 80)
   }
 
-  const removeImage = (idx) => {
-    setImages(prev => prev.filter((_, i) => i !== idx))
-    setPreviews(prev => prev.filter((_, i) => i !== idx))
-  }
-
-  const handleAnalyze = async () => {
-    if (!images.length) { toast('Bitte mindestens einen Screenshot hochladen.', 'error'); return }
-    setLoading(true); setResult(null); setRawResult(null); setSaved(false)
+  const handleSubmit = async () => {
+    if (!quantity || parseFloat(quantity) <= 0) return
+    setSaving(true)
     try {
-      const data = await api.analyzePortfolio(images, style)
-      if (data.analysis) setResult(data.analysis)
-      else setRawResult(data.raw)
-    } catch (e) {
-      toast(e.message, 'error')
-    } finally {
-      setLoading(false)
-    }
+      await onAdd(asset.symbol, asset.name, asset.type, quantity, avgPrice || null)
+      onClose()
+    } catch { setSaving(false) }
   }
 
-  const handleSave = async () => {
-    if (!user) { toast('Bitte zuerst anmelden um Analysen zu speichern.', 'error'); return }
-    try {
-      const toSave = result ? JSON.stringify(result) : rawResult
-      await save(style, toSave)
-      setSaved(true)
-      toast('Analyse gespeichert.', 'success')
-      setResult(null)
-      setRawResult(null)
-      setImages([])
-      setPreviews([])
-      setStyle('')
-    } catch {
-      toast('Speichern fehlgeschlagen.', 'error')
-    }
-  }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-md" onClick={onClose} />
+      <div className={`relative mt-auto rounded-t-3xl ${bg} flex flex-col max-h-[90vh]`}>
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className={`w-10 h-1 rounded-full ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`} />
+        </div>
 
-  const handleDelete = async (id) => { await remove(id); toast('Analyse gelöscht.', 'info') }
-
-  if (!consent && !showConsent) {
-    return (
-      <div className="space-y-5">
-        <div className="pt-2"><h1 className={`text-2xl font-bold tracking-tight ${text}`}>Portfolio-Analyse</h1></div>
-        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-          <div className="w-14 h-14 rounded-3xl bg-tp-border flex items-center justify-center">
-            <Sparkles size={28} className="text-tp-sub" />
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0">
+          <div>
+            {step === 'search'
+              ? <h2 className={`text-lg font-bold ${text}`}>Position hinzufügen</h2>
+              : <button onClick={() => { setStep('search'); setAsset(null) }}
+                  className={`text-sm text-tp-blue font-medium`}>← Zurück</button>
+            }
           </div>
-          <p className={`text-sm max-w-xs ${sub}`}>
-            Du hast die Einwilligung abgelehnt. Aktiviere das Feature unter <strong>Konto → Portfolio-Analyse</strong>.
-          </p>
-          <button onClick={() => navigate('/account')} className="text-sm text-tp-blue hover:underline">Zu den Einstellungen →</button>
+          <button onClick={onClose} className={`w-8 h-8 rounded-full flex items-center justify-center ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`}>
+            <X size={15} className={sub} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-5 pb-8 space-y-4" style={{ paddingBottom: 'max(32px, calc(env(safe-area-inset-bottom) + 16px))' }}>
+          {step === 'search' ? (
+            <>
+              {/* Search input */}
+              <div className={`flex items-center gap-2 rounded-2xl px-4 py-3.5 border ${input}`}>
+                {loading
+                  ? <Loader2 size={15} className={`${sub} animate-spin shrink-0`} />
+                  : <Search size={15} className={`${sub} shrink-0`} />
+                }
+                <input
+                  ref={inputRef}
+                  type="search"
+                  placeholder="Aktie, ETF, Krypto, Rohstoff…"
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  className="flex-1 bg-transparent text-sm outline-none"
+                  autoComplete="off" autoCorrect="off" spellCheck={false}
+                />
+                {query && <button onClick={() => setQuery('')}><X size={14} className={sub} /></button>}
+              </div>
+
+              {/* Results */}
+              {results.length > 0 && (
+                <div className={`rounded-2xl border overflow-hidden ${card}`}>
+                  {results.map((r, i) => (
+                    <div key={r.symbol}>
+                      {i > 0 && <div className={`h-px mx-4 ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`} />}
+                      <button
+                        onClick={() => selectAsset(r)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 text-left ${dark ? 'hov-dark' : 'hov-light'}`}
+                      >
+                        <AssetLogo symbol={r.symbol} type={r.type} size={38} />
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-sm font-semibold ${text}`}>{r.symbol.replace(/-USD$/, '')}</div>
+                          <div className={`text-xs truncate ${sub}`}>{r.name}</div>
+                        </div>
+                        <span className={`text-xs font-medium shrink-0 ${TYPE_COLOR[r.type] ?? sub}`}>
+                          {TYPE_LABEL[r.type] ?? r.type}
+                        </span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!query && (
+                <p className={`text-sm text-center pt-4 ${sub}`}>
+                  Suche nach einer Aktie, ETF, Krypto oder einem Rohstoff
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Selected asset */}
+              <div className={`flex items-center gap-3 rounded-2xl border p-4 ${card}`}>
+                <AssetLogo symbol={asset.symbol} type={asset.type} size={44} />
+                <div>
+                  <div className={`font-bold ${text}`}>{asset.symbol.replace(/-USD$/, '')}</div>
+                  <div className={`text-sm ${sub}`}>{asset.name}</div>
+                </div>
+              </div>
+
+              {/* Form */}
+              <div className="space-y-3">
+                <div>
+                  <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 block ${sub}`}>
+                    Anzahl <span className="text-tp-red">*</span>
+                  </label>
+                  <input
+                    ref={qtyRef}
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="z.B. 10 oder 0.5"
+                    value={quantity}
+                    onChange={e => setQuantity(e.target.value)}
+                    className={`w-full px-4 py-3.5 rounded-2xl border outline-none transition-colors text-sm ${input}`}
+                  />
+                </div>
+                <div>
+                  <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 block ${sub}`}>
+                    Ø Kaufpreis <span className={`font-normal normal-case ${sub}`}>(optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="z.B. 145.00"
+                    value={avgPrice}
+                    onChange={e => setAvgPrice(e.target.value)}
+                    className={`w-full px-4 py-3.5 rounded-2xl border outline-none transition-colors text-sm ${input}`}
+                  />
+                  <p className={`text-xs mt-1.5 ${sub}`}>
+                    Zum Berechnen deiner Gewinne / Verluste
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleSubmit}
+                disabled={!quantity || parseFloat(quantity) <= 0 || saving}
+                className="w-full py-4 rounded-2xl bg-tp-blue text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-40"
+              >
+                {saving
+                  ? <><Loader2 size={16} className="animate-spin" />Wird hinzugefügt…</>
+                  : <><Plus size={16} />Zum Portfolio hinzufügen</>
+                }
+              </button>
+            </>
+          )}
         </div>
       </div>
-    )
+    </div>,
+    document.body
+  )
+}
+
+// ── Position Card ─────────────────────────────────────────────────────────────
+function PositionCard({ position, quote, onDelete, dark }) {
+  const text = dark ? 'text-tp-text'  : 'text-tp-text-l'
+  const sub  = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
+  const card = dark ? 'bg-tp-card border-tp-border' : 'bg-tp-card-l border-tp-border-l'
+
+  const price        = quote?.price
+  const currency     = quote?.currency ?? 'USD'
+  const currentValue = price != null ? position.quantity * price : null
+  const costBasis    = position.avg_price ? position.quantity * position.avg_price : null
+  const gain         = currentValue != null && costBasis != null ? currentValue - costBasis : null
+  const gainPct      = gain != null && costBasis ? (gain / costBasis) * 100 : null
+  const isUp         = gain != null ? gain >= 0 : null
+
+  return (
+    <div className={`rounded-2xl border p-4 ${card}`}>
+      <div className="flex items-center gap-3">
+        <AssetLogo symbol={position.symbol} type={position.asset_type} size={42} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={`font-bold text-sm ${text}`}>{position.symbol.replace(/-USD$/, '')}</span>
+            {gain != null && (
+              <span className={`flex items-center gap-0.5 text-xs font-semibold ${isUp ? 'text-tp-green' : 'text-tp-red'}`}>
+                {isUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                {fmtPct(gainPct)}
+              </span>
+            )}
+          </div>
+          <div className={`text-xs truncate ${sub}`}>{position.name}</div>
+          <div className={`text-xs mt-0.5 ${sub}`}>
+            {position.quantity % 1 === 0 ? position.quantity : position.quantity.toFixed(4)} Stück
+            {position.avg_price != null && ` · Ø ${fmtCurrency(position.avg_price, currency)}`}
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          {currentValue != null
+            ? <div className={`text-sm font-bold ${text}`}>{fmtCurrency(currentValue, currency)}</div>
+            : <div className={`text-sm ${sub}`}>—</div>
+          }
+          {gain != null && (
+            <div className={`text-xs font-medium ${isUp ? 'text-tp-green' : 'text-tp-red'}`}>
+              {isUp ? '+' : ''}{fmtCurrency(gain, currency)}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => onDelete(position.id)}
+          className={`p-2 rounded-xl ml-1 transition-colors text-tp-red ${dark ? 'hover:bg-red-500/10' : 'hover:bg-red-50'}`}
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export default function Portfolio() {
+  const { dark }              = useTheme()
+  const { user }              = useAuth()
+  const navigate              = useNavigate()
+  const toast                 = useToast()
+  const { positions, loading, add, remove } = usePortfolioPositions()
+
+  const [quotes,       setQuotes]       = useState({})
+  const [quotesLoading, setQuotesLoading] = useState(false)
+  const [showAdd,      setShowAdd]      = useState(false)
+
+  const text  = dark ? 'text-tp-text'  : 'text-tp-text-l'
+  const sub   = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
+  const card  = dark ? 'bg-tp-card border-tp-border' : 'bg-tp-card-l border-tp-border-l'
+
+  // Fetch quotes for all positions
+  const fetchQuotes = useCallback(async () => {
+    if (!positions.length) return
+    const symbols = [...new Set(positions.map(p => p.symbol))]
+    setQuotesLoading(true)
+    try {
+      const data = await api.batchQuotes(symbols)
+      setQuotes(data)
+    } catch {}
+    finally { setQuotesLoading(false) }
+  }, [positions])
+
+  useEffect(() => { fetchQuotes() }, [fetchQuotes])
+
+  // Recompute totals
+  const positionsWithData = positions.map(p => ({
+    ...p,
+    quote:        quotes[p.symbol],
+    currentValue: quotes[p.symbol]?.price != null ? p.quantity * quotes[p.symbol].price : null,
+    costBasis:    p.avg_price ? p.quantity * p.avg_price : null,
+  }))
+
+  const totalValue    = positionsWithData.reduce((s, p) => s + (p.currentValue ?? 0), 0)
+  const totalCost     = positionsWithData.reduce((s, p) => s + (p.costBasis ?? 0), 0)
+  const totalGain     = totalCost > 0 ? totalValue - totalCost : null
+  const totalGainPct  = totalGain != null && totalCost > 0 ? (totalGain / totalCost) * 100 : null
+  const isUp          = totalGain != null ? totalGain >= 0 : null
+
+  const chartData = positionsWithData
+    .filter(p => p.currentValue != null && p.currentValue > 0)
+    .map((p, i) => ({ name: p.symbol.replace(/-USD$/, ''), value: p.currentValue, color: COLORS[i % COLORS.length] }))
+
+  const handleAdd = async (symbol, name, type, quantity, avgPrice) => {
+    await add(symbol, name, type, quantity, avgPrice)
+    toast(`${symbol.replace(/-USD$/, '')} hinzugefügt`, 'success')
+  }
+
+  const handleDelete = async (id) => {
+    await remove(id)
+    toast('Position entfernt', 'info')
   }
 
   return (
     <>
-      {showConsent && <ConsentModal onAccept={handleAccept} onDecline={handleDecline} dark={dark} />}
+      {showAdd && <AddPositionSheet onClose={() => setShowAdd(false)} onAdd={handleAdd} dark={dark} />}
 
       <div className="space-y-5">
-        <div className="pt-2">
-          <h1 className={`text-2xl font-bold tracking-tight ${text}`}>Portfolio-Analyse</h1>
-          <p className={`text-sm mt-0.5 ${sub}`}>Lass dein Depot von KI analysieren</p>
-        </div>
-
-        {/* Upload */}
-        <div className={`rounded-3xl border p-5 space-y-4 ${card}`}>
-          <div className={`text-sm font-semibold ${text}`}>Screenshots hochladen</div>
-          <div className={`rounded-2xl p-3 text-xs flex gap-2 ${dark ? 'bg-yellow-500/10 text-yellow-300' : 'bg-yellow-50 text-yellow-700'}`}>
-            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-            <span>Kein Name, keine Kontonummer und keine Depot-ID sichtbar lassen.</span>
-          </div>
-          {previews.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {previews.map((src, i) => (
-                <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border border-tp-border">
-                  <img src={src} alt="" className="w-full h-full object-cover" />
-                  <button onClick={() => removeImage(i)} className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center">
-                    <X size={11} className="text-white" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          {images.length < 5 && (
-            <button onClick={() => fileRef.current?.click()}
-              className={`w-full py-4 rounded-2xl border-2 border-dashed flex flex-col items-center gap-2 transition-colors
-                ${dark ? 'border-tp-border hover:border-tp-blue text-tp-sub hover:text-tp-blue' : 'border-tp-border-l hover:border-tp-blue text-tp-sub-l hover:text-tp-blue'}`}>
-              <Upload size={22} />
-              <span className="text-sm font-medium">{images.length === 0 ? 'Screenshots auswählen' : `Weitere hinzufügen (${images.length}/5)`}</span>
-            </button>
-          )}
-          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
-        </div>
-
-        {/* Style */}
-        <div className={`rounded-3xl border p-5 space-y-3 ${card}`}>
+        {/* Header */}
+        <div className="pt-2 flex items-start justify-between">
           <div>
-            <div className={`text-sm font-semibold ${text}`}>Dein Anlagestil <span className={`font-normal ${sub}`}>(optional)</span></div>
-            <div className={`text-xs mt-0.5 ${sub}`}>Hilft der KI, Redundanzen besser einzuordnen</div>
+            <div className="flex items-center gap-2">
+              <h1 className={`text-2xl font-bold tracking-tight ${text}`}>Portfolio</h1>
+              <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-500">
+                <Wrench size={9} /> BETA
+              </span>
+            </div>
+            <p className={`text-sm mt-0.5 ${sub}`}>Deine Positionen im Überblick</p>
           </div>
-          <textarea value={style} onChange={e => setStyle(e.target.value)}
-            placeholder="z.B. Langfristig orientiert, tech-fokussiert, möchte breit diversifizieren..."
-            rows={3} className={`w-full px-4 py-3 rounded-2xl border outline-none transition-colors text-sm resize-none ${input}`} />
         </div>
 
-        {/* Button */}
-        <button onClick={handleAnalyze} disabled={loading || images.length === 0}
-          className="w-full py-4 rounded-2xl bg-tp-blue text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-40">
-          {loading ? (
-            <><div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />Analysiere…</>
-          ) : (
-            <><Sparkles size={18} />Analyse starten</>
-          )}
+        {/* Beta warning */}
+        <div className={`rounded-2xl px-4 py-3 flex gap-2 text-xs ${dark ? 'bg-yellow-500/10 text-yellow-300' : 'bg-yellow-50 text-yellow-700'}`}>
+          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+          <span>Dieses Feature befindet sich noch in aktiver Entwicklung. Es können Fehler auftreten oder Daten verloren gehen.</span>
+        </div>
+
+        {/* Total value card */}
+        {positions.length > 0 && (
+          <div className={`rounded-3xl border p-5 ${card}`}>
+            <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${sub}`}>Gesamtwert</div>
+            {quotesLoading && totalValue === 0
+              ? <div className={`h-8 w-36 rounded-xl animate-pulse ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`} />
+              : <div className={`text-3xl font-bold tracking-tight ${text}`}>
+                  {totalValue > 0 ? `$${totalValue.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                </div>
+            }
+            {totalGain != null && (
+              <div className={`flex items-center gap-1.5 mt-1 text-sm font-semibold ${isUp ? 'text-tp-green' : 'text-tp-red'}`}>
+                {isUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                {isUp ? '+' : ''}{totalGain.toLocaleString('de', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <span className="opacity-80">({fmtPct(totalGainPct)})</span>
+              </div>
+            )}
+            <p className={`text-[10px] mt-2 ${sub} opacity-60`}>
+              Werte in Originalwährung · kein Währungsumrechnung
+            </p>
+          </div>
+        )}
+
+        {/* Allocation chart */}
+        {chartData.length >= 2 && (
+          <div className={`rounded-3xl border p-5 ${card}`}>
+            <div className={`text-sm font-semibold mb-4 ${text}`}>Aufteilung</div>
+            <div className="flex gap-4 items-center">
+              <div style={{ width: 110, height: 110, flexShrink: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={chartData} dataKey="value" cx="50%" cy="50%" innerRadius={28} outerRadius={50} strokeWidth={0}>
+                      {chartData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v) => [`$${v.toLocaleString('de', { maximumFractionDigits: 0 })}`, '']}
+                      contentStyle={{ background: dark ? '#1c1c1e' : '#fff', border: 'none', borderRadius: 10, fontSize: 11 }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex-1 space-y-1.5 min-w-0">
+                {chartData.map((entry, i) => {
+                  const pct = totalValue > 0 ? (entry.value / totalValue * 100).toFixed(1) : '0'
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: entry.color }} />
+                      <div className={`text-xs truncate flex-1 ${sub}`}>{entry.name}</div>
+                      <div className={`text-xs font-semibold shrink-0 ${text}`}>{pct}%</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Positions */}
+        {loading ? (
+          <div className="space-y-2.5">
+            {[1,2,3].map(i => (
+              <div key={i} className={`h-20 rounded-2xl animate-pulse ${dark ? 'bg-tp-card' : 'bg-tp-card-l'}`} />
+            ))}
+          </div>
+        ) : positions.length === 0 ? (
+          /* Empty state */
+          <div className={`rounded-3xl border p-10 flex flex-col items-center text-center gap-4 ${card}`}>
+            <div className={`w-16 h-16 rounded-3xl flex items-center justify-center text-3xl ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`}>
+              📊
+            </div>
+            <div>
+              <div className={`text-base font-bold ${text}`}>Noch keine Positionen</div>
+              <div className={`text-sm mt-1 max-w-xs ${sub}`}>
+                Füge deine erste Aktie, ETF, Krypto oder Rohstoff hinzu — mit Anzahl und optionalem Kaufpreis.
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAdd(true)}
+              className="px-6 py-3 rounded-2xl bg-tp-blue text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+            >
+              Erste Position hinzufügen
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h2 className={`text-xs font-semibold uppercase tracking-wider ${sub}`}>
+                Positionen ({positions.length})
+              </h2>
+              {!user && (
+                <button onClick={() => navigate('/auth')} className="text-xs text-tp-blue">
+                  Anmelden zum Synchronisieren →
+                </button>
+              )}
+            </div>
+            {positionsWithData.map(p => (
+              <PositionCard key={p.id} position={p} quote={p.quote} onDelete={handleDelete} dark={dark} />
+            ))}
+          </div>
+        )}
+
+        {/* Add button */}
+        {positions.length > 0 && (
+          <button
+            onClick={() => setShowAdd(true)}
+            className={`w-full py-4 rounded-2xl border-2 border-dashed flex items-center justify-center gap-2 transition-colors font-medium text-sm
+              ${dark ? 'border-tp-border text-tp-sub hover:border-tp-blue hover:text-tp-blue' : 'border-tp-border-l text-tp-sub-l hover:border-tp-blue hover:text-tp-blue'}`}
+          >
+            <Plus size={16} /> Position hinzufügen
+          </button>
+        )}
+
+        {/* Divider */}
+        <div className={`h-px ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`} />
+
+        {/* KI-Analyse link */}
+        <button
+          onClick={() => navigate('/portfolio/analyse')}
+          className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-colors ${dark ? 'bg-tp-card border-tp-border hov-dark' : 'bg-tp-card-l border-tp-border-l hov-light'}`}
+        >
+          <div className="w-10 h-10 rounded-xl bg-tp-blue/15 flex items-center justify-center shrink-0">
+            <Sparkles size={18} className="text-tp-blue" />
+          </div>
+          <div className="flex-1">
+            <div className={`text-sm font-semibold ${text}`}>KI Portfolio-Analyse</div>
+            <div className={`text-xs ${sub}`}>Screenshot hochladen & von KI analysieren lassen</div>
+          </div>
+          <ChevronRight size={16} className={sub} />
         </button>
 
-        {/* Result */}
-        {(result || rawResult) && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className={`text-sm font-semibold ${text}`}>Analyse-Ergebnis</div>
-              {!saved ? (
-                <button onClick={handleSave} className="flex items-center gap-1.5 text-xs text-tp-blue font-medium hover:opacity-80">
-                  <Save size={14} /> Speichern
-                </button>
-              ) : <span className="text-xs text-tp-green font-medium">Gespeichert ✓</span>}
-            </div>
-            {result ? <AnalysisView data={result} dark={dark} /> : (
-              <div className={`rounded-3xl border p-5 text-sm leading-relaxed whitespace-pre-wrap ${card} ${sub}`}>{rawResult}</div>
-            )}
-          </div>
-        )}
-
-        {/* Saved */}
-        {user && analyses.length > 0 && (
-          <div className="space-y-3">
-            <div className={`text-sm font-semibold ${text}`}>Gespeicherte Analysen</div>
-            {analyses.map(a => <AnalysisCard key={a.id} analysis={a} onDelete={handleDelete} dark={dark} />)}
-          </div>
-        )}
-
         {!user && (
-          <button onClick={() => navigate('/auth')}
-            className={`w-full py-3 rounded-2xl border flex items-center justify-center gap-2 text-sm ${sub} ${dark ? 'border-tp-border' : 'border-tp-border-l'}`}>
-            <LogIn size={16} /> Anmelden um Analysen zu speichern
+          <button
+            onClick={() => navigate('/auth')}
+            className={`w-full py-3 rounded-2xl border text-sm flex items-center justify-center gap-2 ${sub} ${dark ? 'border-tp-border' : 'border-tp-border-l'}`}
+          >
+            Anmelden um Daten zu synchronisieren
           </button>
         )}
       </div>

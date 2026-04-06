@@ -33,6 +33,17 @@ async def _cached_quote(symbol: str) -> dict:
         return data
 
 
+@router.get("/quotes/batch")
+async def batch_quotes(symbols: str):
+    """Fetch quotes for up to 20 comma-separated symbols in one request."""
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:20]
+    results = await asyncio.gather(
+        *[_cached_quote(s) for s in symbol_list],
+        return_exceptions=True,
+    )
+    return {sym: (None if isinstance(res, Exception) else res) for sym, res in zip(symbol_list, results)}
+
+
 @router.get("/quote/{symbol}")
 async def quote(symbol: str):
     try:
