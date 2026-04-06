@@ -317,6 +317,11 @@ export default function Portfolio() {
       await save(style, toSave)
       setSaved(true)
       toast('Analyse gespeichert.', 'success')
+      setResult(null)
+      setRawResult(null)
+      setImages([])
+      setPreviews([])
+      setStyle('')
     } catch {
       toast('Speichern fehlgeschlagen.', 'error')
     }
