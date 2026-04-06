@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import base64
 import requests as http
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
@@ -12,24 +14,31 @@ MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 SYSTEM_PROMPT = """Du bist ein erfahrener, unabhängiger Finanzanalyst. Du analysierst Portfolio-Screenshots eines Privatanlegers.
 
-Deine Analyse soll folgende Punkte strukturiert abdecken:
+Gib deine Antwort AUSSCHLIESSLICH als valides JSON zurück — kein Text davor oder danach, keine Markdown-Codeblöcke.
 
-1. **Portfolio-Übersicht** — Erkenne alle Positionen und schätze die prozentuale Gewichtung jeder Position am Gesamtdepot.
+Das JSON muss exakt diesem Schema entsprechen:
+{
+  "gesamtwert": <Zahl in EUR oder null falls nicht erkennbar>,
+  "positionen": [
+    {"name": "<Name>", "wert": <Zahl|null>, "anteil": <Prozent als Zahl>, "kategorie": "<ETF|Aktie|Krypto|Anleihe|Sonstiges>"}
+  ],
+  "klassen": [
+    {"name": "<Klassenname>", "anteil": <Prozent als Zahl>}
+  ],
+  "bewertung": "<solide|gut|sehr gut|risikobehaftet|einseitig|ausgewogen>",
+  "bewertung_kurz": "<Ein Satz Gesamturteil>",
+  "staerken": ["<Stärke 1>", "<Stärke 2>"],
+  "redundanzen": [
+    {"titel": "<Titel>", "beschreibung": "<Erklärung>", "ueberlappung": <Prozent als Zahl|null>}
+  ],
+  "optimierungen": ["<Vorschlag 1>", "<Vorschlag 2>"],
+  "fazit": "<2-3 Sätze abschließendes Fazit inkl. Hinweis dass dies keine Anlageberatung ist>"
+}
 
-2. **Diversifikation** — Bewerte die Streuung nach Anlageklassen, Regionen und Sektoren. Wie gut ist das Portfolio diversifiziert?
-
-3. **Redundanzen** — Identifiziere Überschneidungen (z.B. ETFs die denselben Index teilweise abbilden). Erkläre konkret welche Positionen sich überlappen und zu wie viel Prozent (falls schätzbar).
-
-4. **Stärken** — Was macht dieses Portfolio gut?
-
-5. **Optimierungspotenziale** — Konkrete, umsetzbare Vorschläge zur Verbesserung. Beziehe den Anlagestil des Users mit ein (falls angegeben).
-
-6. **Gesamtbewertung** — Kurzes abschließendes Fazit mit einer Einschätzung (z.B. "solides Basis-Portfolio", "stark tech-lastig", etc.)
-
-Wichtige Hinweise:
-- Formuliere klar und verständlich, nicht zu technisch
-- Gib keine Anlageberatung im rechtlichen Sinne — weise am Ende kurz darauf hin
-- Falls der Anlagestil des Users angegeben ist, berücksichtige ihn bei der Bewertung von Redundanzen
+Wichtig:
+- Schätze Werte wenn nicht direkt sichtbar
+- Berücksichtige den Anlagestil des Users bei Redundanzen (falls angegeben)
+- Anteil-Werte sind immer Zahlen (z.B. 59.7 nicht "59.7%")
 """
 
 
@@ -86,8 +95,17 @@ async def analyze_portfolio(
         if not resp.ok:
             raise HTTPException(status_code=502, detail=f"Analyse fehlgeschlagen: {resp.text}")
 
-        result = resp.json()["choices"][0]["message"]["content"]
-        return {"analysis": result}
+        raw = resp.json()["choices"][0]["message"]["content"]
+
+        # Strip markdown code fences if model added them
+        cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
+
+        try:
+            structured = json.loads(cleaned)
+            return {"analysis": structured, "raw": None}
+        except Exception:
+            # Fallback: return raw text so frontend can still show something
+            return {"analysis": None, "raw": raw}
 
     except HTTPException:
         raise
