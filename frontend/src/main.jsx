@@ -6,6 +6,9 @@ import { AuthProvider }  from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import App from './App'
 import './index.css'
+import { pingBackend } from './lib/api'
+
+pingBackend() // wake up Render free tier on app start
 
 // Apply saved theme before first paint (avoids flash)
 const saved = localStorage.getItem('theme')
