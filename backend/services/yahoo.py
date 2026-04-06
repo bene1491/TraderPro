@@ -92,30 +92,34 @@ _info_cache: dict[str, tuple[dict, datetime.datetime]] = {}
 _INFO_TTL = datetime.timedelta(minutes=30)
 
 
-def _get_ticker_info(symbol: str) -> dict:
+def _get_ticker_info(symbol: str, ticker=None) -> dict:
     """Fetch ticker.info with a 30-min cache. Returns last known data on failure."""
+    import time
     now = datetime.datetime.utcnow()
+
+    # Return from cache if still fresh
     if symbol in _info_cache:
         cached, ts = _info_cache[symbol]
         if now - ts < _INFO_TTL:
             return cached
-        # Cache stale — try to refresh, but keep old data as fallback
+
+    # Try to fetch fresh data — up to 3 attempts
+    t = ticker or yf.Ticker(symbol)
+    for attempt in range(3):
         try:
-            fresh = yf.Ticker(symbol).info or {}
-            if fresh:
-                _info_cache[symbol] = (fresh, now)
-                return fresh
+            data = t.info or {}
+            if data and len(data) > 5:   # non-trivial response
+                _info_cache[symbol] = (data, now)
+                return data
         except Exception:
             pass
-        return cached  # return stale data rather than empty dict
-    # No cache yet
-    try:
-        data = yf.Ticker(symbol).info or {}
-        if data:
-            _info_cache[symbol] = (data, now)
-        return data
-    except Exception:
-        return {}
+        if attempt < 2:
+            time.sleep(0.5)
+
+    # All attempts failed — return stale cache if available, else empty
+    if symbol in _info_cache:
+        return _info_cache[symbol][0]
+    return {}
 
 
 def _get_eur_rate(from_currency: str) -> float | None:
@@ -212,7 +216,7 @@ def get_quote(symbol: str) -> dict:
         pass
 
     # ticker.info: use long-lived cache so description/analyst data survives intermittent failures
-    info = _get_ticker_info(symbol)
+    info = _get_ticker_info(symbol, ticker)
 
     price = prev_close = None
     if fi:
