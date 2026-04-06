@@ -1,12 +1,13 @@
 import os
 import base64
-import google.generativeai as genai
+import requests as http
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import List, Optional
 
 router = APIRouter()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent"
 
 SYSTEM_PROMPT = """Du bist ein erfahrener, unabhängiger Finanzanalyst. Du analysierst Portfolio-Screenshots eines Privatanlegers.
 
@@ -44,12 +45,9 @@ async def analyze_portfolio(
         raise HTTPException(status_code=400, detail="Maximal 5 Screenshots erlaubt.")
 
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("models/gemini-1.5-flash")
-
         parts = []
 
-        # Add images
+        # Add images as inline_data
         for img in images:
             content = await img.read()
             mime = img.content_type or "image/jpeg"
@@ -60,19 +58,38 @@ async def analyze_portfolio(
                 }
             })
 
-        # Build prompt
-        user_prompt = SYSTEM_PROMPT
+        # Build text prompt
+        prompt = SYSTEM_PROMPT
         if investment_style and investment_style.strip():
-            user_prompt += f"\n\n**Anlagestil des Users:** {investment_style.strip()}"
+            prompt += f"\n\n**Anlagestil des Users:** {investment_style.strip()}"
         else:
-            user_prompt += "\n\n**Anlagestil des Users:** Keine Angabe."
+            prompt += "\n\n**Anlagestil des Users:** Keine Angabe."
 
-        parts.append({"text": user_prompt})
+        parts.append({"text": prompt})
 
-        response = model.generate_content(parts)
-        result = response.text
+        payload = {
+            "contents": [{"parts": parts}],
+            "generationConfig": {
+                "temperature": 0.4,
+                "maxOutputTokens": 2048,
+            }
+        }
 
+        resp = http.post(
+            GEMINI_URL,
+            params={"key": GEMINI_API_KEY},
+            json=payload,
+            timeout=60,
+        )
+
+        if not resp.ok:
+            raise HTTPException(status_code=502, detail=f"Gemini Fehler: {resp.text}")
+
+        data = resp.json()
+        result = data["candidates"][0]["content"]["parts"][0]["text"]
         return {"analysis": result}
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Analyse fehlgeschlagen: {str(e)}")
