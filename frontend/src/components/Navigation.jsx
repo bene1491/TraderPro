@@ -5,8 +5,8 @@ import { useTheme } from '../context/ThemeContext'
 const NAV = [
   { to: '/',            icon: Home,       label: 'Entdecken' },
   { to: '/watchlist',   icon: Star,       label: 'Watchlist' },
-  { to: '/calculator',  icon: Calculator, label: 'Rechner'   },
   { to: '/portfolio',   icon: PieChart,   label: 'Portfolio' },
+  { to: '/calculator',  icon: Calculator, label: 'Rechner'   },
   { to: '/account',     icon: User,       label: 'Konto'     },
 ]
 

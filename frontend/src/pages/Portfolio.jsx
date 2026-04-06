@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, Trash2, Search, X, ChevronRight, Sparkles,
+  Plus, Trash2, Search, X, Sparkles,
   TrendingUp, TrendingDown, Wrench, AlertTriangle, Loader2, BarChart2,
 } from 'lucide-react'
 import { AreaChart, Area, PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
@@ -452,17 +452,23 @@ export default function Portfolio() {
   const sub   = dark ? 'text-tp-sub'   : 'text-tp-sub-l'
   const card  = dark ? 'bg-tp-card border-tp-border' : 'bg-tp-card-l border-tp-border-l'
 
-  // Fetch quotes for all positions
+  // Fetch quotes for all positions — stable string key avoids unnecessary refetches
+  const posKey = positions.map(p => p.symbol).join(',')
   const fetchQuotes = useCallback(async () => {
-    if (!positions.length) return
-    const symbols = [...new Set(positions.map(p => p.symbol))]
+    if (!posKey) return
+    const symbols = [...new Set(posKey.split(','))]
     try {
       const data = await api.batchQuotes(symbols)
       setQuotes(data)
     } catch {}
-  }, [positions])
+  }, [posKey])
 
-  useEffect(() => { fetchQuotes() }, [fetchQuotes])
+  useEffect(() => {
+    fetchQuotes()
+    if (!posKey) return
+    const interval = setInterval(fetchQuotes, 8000)
+    return () => clearInterval(interval)
+  }, [fetchQuotes, posKey])
 
   // Recompute totals
   const positionsWithData = positions.map(p => ({
@@ -606,20 +612,28 @@ export default function Portfolio() {
         {/* Divider */}
         <div className={`h-px ${dark ? 'bg-tp-border' : 'bg-tp-border-l'}`} />
 
-        {/* KI-Analyse link */}
-        <button
+        {/* KI-Analyse card */}
+        <div
           onClick={() => navigate('/portfolio/analyse')}
-          className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-colors ${dark ? 'bg-tp-card border-tp-border hov-dark' : 'bg-tp-card-l border-tp-border-l hov-light'}`}
+          className={`w-full rounded-3xl border p-5 text-left cursor-pointer transition-colors ${dark ? 'bg-tp-card border-tp-border hov-dark' : 'bg-tp-card-l border-tp-border-l hov-light'}`}
         >
-          <div className="w-10 h-10 rounded-xl bg-tp-blue/15 flex items-center justify-center shrink-0">
-            <Sparkles size={18} className="text-tp-blue" />
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-tp-blue/15 flex items-center justify-center shrink-0">
+              <Sparkles size={26} className="text-tp-blue" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className={`text-base font-bold ${text}`}>KI Portfolio-Analyse</div>
+              <div className={`text-sm mt-1 leading-relaxed ${sub}`}>
+                Lade Screenshots deines Depots hoch und erhalte eine detaillierte KI-Analyse mit Stärken, Schwächen und konkreten Optimierungsvorschlägen.
+              </div>
+              <div className="mt-3">
+                <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-tp-blue text-white text-sm font-semibold">
+                  <Sparkles size={14} /> Jetzt analysieren
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="flex-1">
-            <div className={`text-sm font-semibold ${text}`}>KI Portfolio-Analyse</div>
-            <div className={`text-xs ${sub}`}>Screenshot hochladen & von KI analysieren lassen</div>
-          </div>
-          <ChevronRight size={16} className={sub} />
-        </button>
+        </div>
 
         {!user && (
           <button

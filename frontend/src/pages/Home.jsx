@@ -423,33 +423,46 @@ export default function Home() {
       </div>
 
       {/* Guru Tracker Widget */}
-      <button
+      <div
         onClick={() => navigate('/guru')}
-        className={`w-full rounded-2xl border p-4 text-left transition-colors ${dark ? 'bg-tp-card border-tp-border hov-dark' : 'bg-tp-card-l border-tp-border-l hov-light'}`}
+        className={`w-full rounded-3xl border p-5 text-left cursor-pointer transition-colors ${dark ? 'bg-tp-card border-tp-border hov-dark' : 'bg-tp-card-l border-tp-border-l hov-light'}`}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-tp-blue/15 flex items-center justify-center shrink-0">
-              <TrendingUp size={17} className="text-tp-blue" />
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-tp-blue/15 flex items-center justify-center shrink-0">
+              <TrendingUp size={20} className="text-tp-blue" />
             </div>
             <div>
-              <div className={`text-sm font-semibold ${dark ? 'text-tp-text' : 'text-tp-text-l'}`}>Guru Tracker</div>
-              <div className={`text-xs ${dark ? 'text-tp-sub' : 'text-tp-sub-l'}`}>Was kaufen Buffett &amp; Co. gerade?</div>
+              <div className={`text-base font-bold ${dark ? 'text-tp-text' : 'text-tp-text-l'}`}>Guru Tracker</div>
+              <div className={`text-xs ${dark ? 'text-tp-sub' : 'text-tp-sub-l'}`}>13F-Filings der Top-Investoren</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="flex -space-x-1.5">
-              {[['WB','#3b82f6'],['MB','#ef4444'],['BA','#8b5cf6'],['SD','#f59e0b']].map(([init, color]) => (
-                <div key={init} className="w-6 h-6 rounded-full border-2 flex items-center justify-center text-[8px] font-bold text-white"
-                  style={{ background: color, borderColor: dark ? '#1c1c1e' : '#f2f2f7' }}>
-                  {init}
-                </div>
-              ))}
-            </div>
-            <ChevronRight size={15} className={dark ? 'text-tp-sub' : 'text-tp-sub-l'} />
-          </div>
+          <ChevronRight size={16} className={dark ? 'text-tp-sub' : 'text-tp-sub-l'} />
         </div>
-      </button>
+
+        {/* Guru avatars grid */}
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            ['WB','Warren Buffett','#3b82f6'],
+            ['MB','Michael Burry','#ef4444'],
+            ['BA','Bill Ackman','#8b5cf6'],
+            ['SD','Stan Druckenmiller','#f59e0b'],
+            ['DT','David Tepper','#00b15d'],
+            ['GS','George Soros','#06b6d4'],
+          ].map(([init, name, color]) => (
+            <div key={init} className={`flex items-center gap-2 px-2.5 py-2 rounded-xl ${dark ? 'bg-tp-border/60' : 'bg-tp-border-l/60'}`}>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                style={{ background: color }}>
+                {init}
+              </div>
+              <div className={`text-[10px] font-medium leading-tight truncate ${dark ? 'text-tp-text' : 'text-tp-text-l'}`}>
+                {name.split(' ')[1]}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Categories */}
       <div>
