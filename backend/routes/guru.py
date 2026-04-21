@@ -283,6 +283,3 @@ async def get_holdings(cik: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Daten konnten nicht geladen werden: {e}")
 
-      
-
-      # TEST
